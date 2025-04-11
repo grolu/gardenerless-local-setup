@@ -8,7 +8,7 @@ This repository contains a Bash script designed to simplify the setup and manage
 To use the Gardener Dashboard with kcp, you must use the experimental KCP branch of the Gardener Dashboard. Start the dashboard backend using:
 
 ```bash
-yarn server-kcp
+yarn serve-kcp
 ```
 
 Then, before logging in via your browser, append the query parameter `?workspace=<workspace-path>` to the login URL (for example, `https://localhost:8443/login?workspace=root:demo-animals`).
@@ -60,7 +60,7 @@ Before using this script, please ensure you have:
   Needed to authenticate when cloning the repository for Gardener CRDs.
 
 - **Yarn:**  
-  To start the Gardener Dashboard backend with `yarn server-kcp` (ensure you are using the experimental KCP branch of the dashboard).
+  To start the Gardener Dashboard backend with `yarn serve-kcp` (ensure you are using the experimental KCP branch of the dashboard).
 
 ---
 
@@ -206,7 +206,7 @@ To integrate the Gardener Dashboard with your kcp setup:
 2. **Start the Dashboard Backend:**
 
    ```bash
-   yarn server-kcp
+   yarn serve-kcp
    ```
 
 3. **Log In with the Appropriate Workspace:**  
