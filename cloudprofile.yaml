@@ -1,0 +1,42 @@
+apiVersion: core.gardener.cloud/v1beta1
+kind: CloudProfile
+metadata:
+  name: aws
+spec:
+  type: aws
+  providerConfig:
+  kubernetes:
+    versions:
+    - version: 1.30.1
+    - version: 1.29.2
+    - version: 1.28.3
+    - version: 1.27.8
+      expirationDate: 2022-11-30T01:02:03Z
+  machineImages:
+  - name: gardenlinux
+    versions:
+    - version: 15.4.20220818
+    - version: 15.4.20220620
+      expirationDate: "2023-02-28T23:59:59Z"
+  - name: ubuntu
+    versions:
+    - version: 18.04.201906170
+  machineTypes:
+  - name: m5.large
+    cpu: "2"
+    gpu: "0"
+    memory: 8Gi
+    usable: true
+  volumeTypes:
+  - name: gp3
+    class: standard
+    usable: true
+  - name: io1
+    class: premium
+    usable: true
+  regions:
+  - name: europe-central-1
+    zones:
+    - name: europe-central-1a
+    - name: europe-central-1b
+    - name: europe-central-1c

@@ -1,0 +1,53 @@
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-*
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Build and dependency directories
+node_modules/
+dist/
+build/
+target/
+bin/
+obj/
+vendor/
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+# Gardener CRDs
+gardener-crds/
+
+# Environment and configuration files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env.json
+
+# Package files
+*.tar.gz
+*.zip
+*.rar
+
+# Other common files to ignore
+*.bak
+*.backup
+*.orig

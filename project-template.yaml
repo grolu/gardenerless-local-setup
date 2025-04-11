@@ -1,0 +1,17 @@
+apiVersion: core.gardener.cloud/v1beta1
+kind: Project
+metadata:
+  name: NAMEPLACEHOLDER
+  annotations:
+    billing.gardener.cloud/costObject: "0000000001"
+    billing.gardener.cloud/costObjectType: internalorder
+spec:
+  members:
+    - kind: ServiceAccount
+      name: dashboard-user
+      namespace: garden
+      role: admin
+      roles:
+        - admin
+        - owner
+  namespace: NAMESPACEPLACEHOLDER
