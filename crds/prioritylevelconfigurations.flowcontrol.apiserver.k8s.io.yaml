@@ -1,0 +1,214 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    api-approved.kubernetes.io: https://github.com/kcp-dev/kubernetes/pull/4
+  creationTimestamp: null
+  name: prioritylevelconfigurations.flowcontrol.apiserver.k8s.io
+spec:
+  conversion:
+    strategy: None
+  group: flowcontrol.apiserver.k8s.io
+  names:
+    kind: PriorityLevelConfiguration
+    listKind: PriorityLevelConfigurationList
+    plural: prioritylevelconfigurations
+    singular: prioritylevelconfiguration
+  scope: Cluster
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: PriorityLevelConfiguration represents the configuration of a
+          priority level.
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: '`spec` is the specification of the desired behavior of a
+              "request-priority". More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status'
+            properties:
+              exempt:
+                description: '`exempt` specifies how requests are handled for an exempt
+                  priority level. This field MUST be empty if `type` is `"Limited"`.
+                  This field MAY be non-empty if `type` is `"Exempt"`. If empty and
+                  `type` is `"Exempt"` then the default values for `ExemptPriorityLevelConfiguration`
+                  apply.'
+                properties:
+                  lendablePercent:
+                    description: |-
+                      `lendablePercent` prescribes the fraction of the level's NominalCL that can be borrowed by other priority levels.  This value of this field must be between 0 and 100, inclusive, and it defaults to 0. The number of seats that other levels can borrow from this level, known as this level's LendableConcurrencyLimit (LendableCL), is defined as follows.
+
+                      LendableCL(i) = round( NominalCL(i) * lendablePercent(i)/100.0 )
+                    format: int32
+                    type: integer
+                  nominalConcurrencyShares:
+                    description: |-
+                      `nominalConcurrencyShares` (NCS) contributes to the computation of the NominalConcurrencyLimit (NominalCL) of this level. This is the number of execution seats nominally reserved for this priority level. This DOES NOT limit the dispatching from this priority level but affects the other priority levels through the borrowing mechanism. The server's concurrency limit (ServerCL) is divided among all the priority levels in proportion to their NCS values:
+
+                      NominalCL(i)  = ceil( ServerCL * NCS(i) / sum_ncs ) sum_ncs = sum[priority level k] NCS(k)
+
+                      Bigger numbers mean a larger nominal concurrency limit, at the expense of every other priority level. This field has a default value of zero.
+                    format: int32
+                    type: integer
+                type: object
+              limited:
+                description: '`limited` specifies how requests are handled for a Limited
+                  priority level. This field must be non-empty if and only if `type`
+                  is `"Limited"`.'
+                properties:
+                  borrowingLimitPercent:
+                    description: |-
+                      `borrowingLimitPercent`, if present, configures a limit on how many seats this priority level can borrow from other priority levels. The limit is known as this level's BorrowingConcurrencyLimit (BorrowingCL) and is a limit on the total number of seats that this level may borrow at any one time. This field holds the ratio of that limit to the level's nominal concurrency limit. When this field is non-nil, it must hold a non-negative integer and the limit is calculated as follows.
+
+                      BorrowingCL(i) = round( NominalCL(i) * borrowingLimitPercent(i)/100.0 )
+
+                      The value of this field can be more than 100, implying that this priority level can borrow a number of seats that is greater than its own nominal concurrency limit (NominalCL). When this field is left `nil`, the limit is effectively infinite.
+                    format: int32
+                    type: integer
+                  lendablePercent:
+                    description: |-
+                      `lendablePercent` prescribes the fraction of the level's NominalCL that can be borrowed by other priority levels. The value of this field must be between 0 and 100, inclusive, and it defaults to 0. The number of seats that other levels can borrow from this level, known as this level's LendableConcurrencyLimit (LendableCL), is defined as follows.
+
+                      LendableCL(i) = round( NominalCL(i) * lendablePercent(i)/100.0 )
+                    format: int32
+                    type: integer
+                  limitResponse:
+                    description: '`limitResponse` indicates what to do with requests
+                      that can not be executed right now'
+                    properties:
+                      queuing:
+                        description: '`queuing` holds the configuration parameters
+                          for queuing. This field may be non-empty only if `type`
+                          is `"Queue"`.'
+                        properties:
+                          handSize:
+                            description: '`handSize` is a small positive number that
+                              configures the shuffle sharding of requests into queues.  When
+                              enqueuing a request at this priority level the request''s
+                              flow identifier (a string pair) is hashed and the hash
+                              value is used to shuffle the list of queues and deal
+                              a hand of the size specified here.  The request is put
+                              into one of the shortest queues in that hand. `handSize`
+                              must be no larger than `queues`, and should be significantly
+                              smaller (so that a few heavy flows do not saturate most
+                              of the queues).  See the user-facing documentation for
+                              more extensive guidance on setting this field.  This
+                              field has a default value of 8.'
+                            format: int32
+                            type: integer
+                          queueLengthLimit:
+                            description: '`queueLengthLimit` is the maximum number
+                              of requests allowed to be waiting in a given queue of
+                              this priority level at a time; excess requests are rejected.  This
+                              value must be positive.  If not specified, it will be
+                              defaulted to 50.'
+                            format: int32
+                            type: integer
+                          queues:
+                            description: '`queues` is the number of queues for this
+                              priority level. The queues exist independently at each
+                              apiserver. The value must be positive.  Setting it to
+                              1 effectively precludes shufflesharding and thus makes
+                              the distinguisher method of associated flow schemas
+                              irrelevant.  This field has a default value of 64.'
+                            format: int32
+                            type: integer
+                        type: object
+                      type:
+                        description: '`type` is "Queue" or "Reject". "Queue" means
+                          that requests that can not be executed upon arrival are
+                          held in a queue until they can be executed or a queuing
+                          limit is reached. "Reject" means that requests that can
+                          not be executed upon arrival are rejected. Required.'
+                        type: string
+                    required:
+                    - type
+                    type: object
+                  nominalConcurrencyShares:
+                    description: |-
+                      `nominalConcurrencyShares` (NCS) contributes to the computation of the NominalConcurrencyLimit (NominalCL) of this level. This is the number of execution seats available at this priority level. This is used both for requests dispatched from this priority level as well as requests dispatched from other priority levels borrowing seats from this level. The server's concurrency limit (ServerCL) is divided among the Limited priority levels in proportion to their NCS values:
+
+                      NominalCL(i)  = ceil( ServerCL * NCS(i) / sum_ncs ) sum_ncs = sum[priority level k] NCS(k)
+
+                      Bigger numbers mean a larger nominal concurrency limit, at the expense of every other priority level.
+
+                      If not specified, this field defaults to a value of 30.
+
+                      Setting this field to zero supports the construction of a "jail" for this priority level that is used to hold some request(s)
+                    format: int32
+                    type: integer
+                type: object
+              type:
+                description: '`type` indicates whether this priority level is subject
+                  to limitation on request execution.  A value of `"Exempt"` means
+                  that requests of this priority level are not subject to a limit
+                  (and thus are never queued) and do not detract from the capacity
+                  made available to other priority levels.  A value of `"Limited"`
+                  means that (a) requests of this priority level _are_ subject to
+                  limits and (b) some of the server''s limited capacity is made available
+                  exclusively to this priority level. Required.'
+                type: string
+            required:
+            - type
+            type: object
+          status:
+            description: '`status` is the current status of a "request-priority".
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status'
+            properties:
+              conditions:
+                description: '`conditions` is the current state of "request-priority".'
+                items:
+                  description: PriorityLevelConfigurationCondition defines the condition
+                    of priority level.
+                  properties:
+                    lastTransitionTime:
+                      description: '`lastTransitionTime` is the last time the condition
+                        transitioned from one status to another.'
+                      format: date-time
+                      type: string
+                    message:
+                      description: '`message` is a human-readable message indicating
+                        details about last transition.'
+                      type: string
+                    reason:
+                      description: '`reason` is a unique, one-word, CamelCase reason
+                        for the condition''s last transition.'
+                      type: string
+                    status:
+                      description: '`status` is the status of the condition. Can be
+                        True, False, Unknown. Required.'
+                      type: string
+                    type:
+                      description: '`type` is the type of the condition. Required.'
+                      type: string
+                  required:
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: null
+  storedVersions:
+  - v1

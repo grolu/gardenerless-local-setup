@@ -1,0 +1,240 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  creationTimestamp: null
+  name: clusteropenidconnectpresets.settings.gardener.cloud
+spec:
+  conversion:
+    strategy: None
+  group: settings.gardener.cloud
+  names:
+    categories:
+    - all
+    kind: ClusterOpenIDConnectPreset
+    listKind: ClusterOpenIDConnectPresetList
+    plural: clusteropenidconnectpresets
+    shortNames:
+    - coidcps
+    singular: clusteropenidconnectpreset
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ClusterOpenIDConnectPreset is a OpenID Connect configuration
+          that is applied to a Shoot objects cluster-wide.
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Spec is the specification of this OpenIDConnect preset.
+            properties:
+              client:
+                description: |-
+                  Client contains the configuration used for client OIDC authentication of Shoot clusters. This configuration is not overwriting any existing OpenID Connect client authentication already set on the Shoot object.
+
+                  Deprecated: The OpenID Connect configuration this field specifies is not used and will be forbidden starting from Kubernetes 1.31. It's use was planned for genereting OIDC kubeconfig https://github.com/gardener/gardener/issues/1433
+                properties:
+                  extraConfig:
+                    additionalProperties:
+                      type: string
+                    description: Extra configuration added to kubeconfig's auth-provider.
+                      Must not be any of idp-issuer-url, client-id, client-secret,
+                      idp-certificate-authority, idp-certificate-authority-data, id-token
+                      or refresh-token
+                    type: object
+                  secret:
+                    description: The client Secret for the OpenID Connect client.
+                    type: string
+                type: object
+              projectSelector:
+                description: Project decides whether to apply the configuration if
+                  the Shoot is in a specific Project matching the label selector.
+                  Use the selector only if the OIDC Preset is opt-in, because end
+                  users may skip the admission by setting the labels. Defaults to
+                  the empty LabelSelector, which matches everything.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: A label selector requirement is a selector that
+                        contains values, a key, and an operator that relates the key
+                        and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: operator represents a key's relationship to
+                            a set of values. Valid operators are In, NotIn, Exists
+                            and DoesNotExist.
+                          type: string
+                        values:
+                          description: values is an array of string values. If the
+                            operator is In or NotIn, the values array must be non-empty.
+                            If the operator is Exists or DoesNotExist, the values
+                            array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: matchLabels is a map of {key,value} pairs. A single
+                      {key,value} in the matchLabels map is equivalent to an element
+                      of matchExpressions, whose key field is "key", the operator
+                      is "In", and the values array contains only "value". The requirements
+                      are ANDed.
+                    type: object
+                type: object
+              server:
+                description: Server contains the kube-apiserver's OpenID Connect configuration.
+                  This configuration is not overwriting any existing OpenID Connect
+                  configuration already set on the Shoot object.
+                properties:
+                  caBundle:
+                    description: If set, the OpenID server's certificate will be verified
+                      by one of the authorities in the oidc-ca-file, otherwise the
+                      host's root CA set will be used.
+                    type: string
+                  clientID:
+                    description: The client ID for the OpenID Connect client. Required.
+                    type: string
+                  groupsClaim:
+                    description: If provided, the name of a custom OpenID Connect
+                      claim for specifying user groups. The claim value is expected
+                      to be a string or array of strings. This field is experimental,
+                      please see the authentication documentation for further details.
+                    type: string
+                  groupsPrefix:
+                    description: If provided, all groups will be prefixed with this
+                      value to prevent conflicts with other authentication strategies.
+                    type: string
+                  issuerURL:
+                    description: The URL of the OpenID issuer, only HTTPS scheme will
+                      be accepted. If set, it will be used to verify the OIDC JSON
+                      Web Token (JWT). Required.
+                    type: string
+                  requiredClaims:
+                    additionalProperties:
+                      type: string
+                    description: key=value pairs that describes a required claim in
+                      the ID Token. If set, the claim is verified to be present in
+                      the ID Token with a matching value.
+                    type: object
+                  signingAlgs:
+                    description: List of allowed JOSE asymmetric signing algorithms.
+                      JWTs with a 'alg' header value not in this list will be rejected.
+                      Values are defined by RFC 7518 https://tools.ietf.org/html/rfc7518#section-3.1
+                      Defaults to [RS256]
+                    items:
+                      type: string
+                    type: array
+                  usernameClaim:
+                    description: The OpenID claim to use as the user name. Note that
+                      claims other than the default ('sub') is not guaranteed to be
+                      unique and immutable. This field is experimental, please see
+                      the authentication documentation for further details. Defaults
+                      to "sub".
+                    type: string
+                  usernamePrefix:
+                    description: If provided, all usernames will be prefixed with
+                      this value. If not provided, username claims other than 'email'
+                      are prefixed by the issuer URL to avoid clashes. To skip any
+                      prefixing, provide the value '-'.
+                    type: string
+                required:
+                - clientID
+                - issuerURL
+                type: object
+              shootSelector:
+                description: ShootSelector decides whether to apply the configuration
+                  if the Shoot has matching labels. Use the selector only if the OIDC
+                  Preset is opt-in, because end users may skip the admission by setting
+                  the labels. Default to the empty LabelSelector, which matches everything.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: A label selector requirement is a selector that
+                        contains values, a key, and an operator that relates the key
+                        and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: operator represents a key's relationship to
+                            a set of values. Valid operators are In, NotIn, Exists
+                            and DoesNotExist.
+                          type: string
+                        values:
+                          description: values is an array of string values. If the
+                            operator is In or NotIn, the values array must be non-empty.
+                            If the operator is Exists or DoesNotExist, the values
+                            array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: matchLabels is a map of {key,value} pairs. A single
+                      {key,value} in the matchLabels map is equivalent to an element
+                      of matchExpressions, whose key field is "key", the operator
+                      is "In", and the values array contains only "value". The requirements
+                      are ANDed.
+                    type: object
+                type: object
+              weight:
+                description: Weight associated with matching the corresponding preset,
+                  in the range 1-100. Required.
+                format: int32
+                type: integer
+            required:
+            - server
+            - weight
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: null
+  storedVersions:
+  - v1alpha1

@@ -1,0 +1,236 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  creationTimestamp: null
+  name: bastions.operations.gardener.cloud
+spec:
+  conversion:
+    strategy: None
+  group: operations.gardener.cloud
+  names:
+    categories:
+    - all
+    kind: Bastion
+    listKind: BastionList
+    plural: bastions
+    singular: bastion
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Bastion holds details about an SSH bastion for a shoot cluster.
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Specification of the Bastion.
+            properties:
+              ingress:
+                description: Ingress controls from where the created bastion host
+                  should be reachable.
+                items:
+                  description: BastionIngressPolicy represents an ingress policy for
+                    SSH bastion hosts.
+                  properties:
+                    ipBlock:
+                      description: IPBlock defines an IP block that is allowed to
+                        access the bastion.
+                      properties:
+                        cidr:
+                          description: cidr is a string representing the IPBlock Valid
+                            examples are "192.168.1.0/24" or "2001:db8::/64"
+                          type: string
+                        except:
+                          description: except is a slice of CIDRs that should not
+                            be included within an IPBlock Valid examples are "192.168.1.0/24"
+                            or "2001:db8::/64" Except values will be rejected if they
+                            are outside the cidr range
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - cidr
+                      type: object
+                  required:
+                  - ipBlock
+                  type: object
+                type: array
+              providerType:
+                description: ProviderType is cloud provider used by the referenced
+                  Shoot.
+                type: string
+              seedName:
+                description: SeedName is the name of the seed to which this Bastion
+                  is currently scheduled. This field is populated at the beginning
+                  of a create/reconcile operation.
+                type: string
+              shootRef:
+                description: ShootRef defines the target shoot for a Bastion. The
+                  name field of the ShootRef is immutable.
+                properties:
+                  name:
+                    description: 'Name of the referent. This field is effectively
+                      required, but due to backwards compatibility is allowed to be
+                      empty. Instances of this type with an empty value here are almost
+                      certainly wrong. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                    type: string
+                type: object
+              sshPublicKey:
+                description: SSHPublicKey is the user's public key. This field is
+                  immutable.
+                type: string
+            required:
+            - shootRef
+            - sshPublicKey
+            - ingress
+            type: object
+          status:
+            description: Most recently observed status of the Bastion.
+            properties:
+              conditions:
+                description: Conditions represents the latest available observations
+                  of a Bastion's current state.
+                items:
+                  description: Condition holds the information about the state of
+                    a resource.
+                  properties:
+                    codes:
+                      description: Well-defined error codes in case the condition
+                        reports a problem.
+                      items:
+                        type: string
+                      type: array
+                    lastTransitionTime:
+                      description: Last time the condition transitioned from one status
+                        to another.
+                      format: date-time
+                      type: string
+                    lastUpdateTime:
+                      description: Last time the condition was updated.
+                      format: date-time
+                      type: string
+                    message:
+                      description: A human readable message indicating details about
+                        the transition.
+                      type: string
+                    reason:
+                      description: The reason for the condition's last transition.
+                      type: string
+                    status:
+                      description: Status of the condition, one of True, False, Unknown.
+                      type: string
+                    type:
+                      description: Type of the condition.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - lastUpdateTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              expirationTimestamp:
+                description: ExpirationTimestamp is the time after which a Bastion
+                  is supposed to be garbage collected.
+                format: date-time
+                type: string
+              ingress:
+                description: Ingress holds the public IP and/or hostname of the bastion
+                  instance.
+                properties:
+                  hostname:
+                    description: Hostname is set for load-balancer ingress points
+                      that are DNS based (typically AWS load-balancers)
+                    type: string
+                  ip:
+                    description: IP is set for load-balancer ingress points that are
+                      IP based (typically GCE or OpenStack load-balancers)
+                    type: string
+                  ipMode:
+                    description: IPMode specifies how the load-balancer IP behaves,
+                      and may only be specified when the ip field is specified. Setting
+                      this to "VIP" indicates that traffic is delivered to the node
+                      with the destination set to the load-balancer's IP and port.
+                      Setting this to "Proxy" indicates that traffic is delivered
+                      to the node or pod with the destination set to the node's IP
+                      and node port or the pod's IP and port. Service implementations
+                      may use this information to adjust traffic routing.
+                    type: string
+                  ports:
+                    description: Ports is a list of records of service ports If used,
+                      every port defined in the service should have an entry in it
+                    items:
+                      properties:
+                        error:
+                          description: |-
+                            Error is to record the problem with the service port The format of the error shall comply with the following rules: - built-in error values shall be specified in this file and those shall use
+                              CamelCase names
+                            - cloud provider specific error values must have names that comply with the
+                              format foo.example.com/CamelCase.
+                          type: string
+                        port:
+                          description: Port is the port number of the service port
+                            of which status is recorded here
+                          format: int32
+                          type: integer
+                        protocol:
+                          description: |-
+                            Protocol is the protocol of the service port of which status is recorded here The supported values are: "TCP", "UDP", "SCTP"
+
+                            Possible enum values:
+                             - `"SCTP"` is the SCTP protocol.
+                             - `"TCP"` is the TCP protocol.
+                             - `"UDP"` is the UDP protocol.
+                          type: string
+                      required:
+                      - port
+                      - protocol
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
+              lastHeartbeatTimestamp:
+                description: LastHeartbeatTimestamp is the time when the bastion was
+                  last marked as not to be deleted. When this is set, the ExpirationTimestamp
+                  is advanced as well.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  for this Bastion. It corresponds to the Bastion's generation, which
+                  is updated on mutation by the API Server.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - metadata
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: null
+  storedVersions:
+  - v1alpha1

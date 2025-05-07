@@ -1,0 +1,93 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  creationTimestamp: null
+  name: workloadidentities.security.gardener.cloud
+spec:
+  conversion:
+    strategy: None
+  group: security.gardener.cloud
+  names:
+    kind: WorkloadIdentity
+    listKind: WorkloadIdentityList
+    plural: workloadidentities
+    shortNames:
+    - wi
+    singular: workloadidentity
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: WorkloadIdentity is resource that allows workloads to be presented
+          before external systems by giving them identities managed by the Gardener
+          API server. The identity of such workload is represented by JSON Web Token
+          issued by the Gardener API server. Workload identities are designed to be
+          used by components running in the Gardener environment, seed or runtime
+          cluster, that make use of identity federation inspired by the OIDC protocol.
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Spec configures the JSON Web Token issued by the Gardener
+              API server.
+            properties:
+              audiences:
+                description: Audiences specify the list of recipients that the JWT
+                  is intended for. The values of this field will be set in the 'aud'
+                  claim.
+                items:
+                  type: string
+                type: array
+              targetSystem:
+                description: TargetSystem represents specific configurations for the
+                  system that will accept the JWTs.
+                properties:
+                  providerConfig:
+                    description: ProviderConfig is the configuration passed to extension
+                      resource.
+                    type: object
+                  type:
+                    description: Type is the type of the target system.
+                    type: string
+                required:
+                - type
+                type: object
+            required:
+            - audiences
+            - targetSystem
+            type: object
+          status:
+            description: Status contain the latest observed status of the WorkloadIdentity.
+            properties:
+              sub:
+                description: Sub contains the computed value of the subject that is
+                  going to be set in JWTs 'sub' claim.
+                type: string
+            required:
+            - sub
+            type: object
+        required:
+        - spec
+        - status
+        type: object
+    served: true
+    storage: true
+    subresources: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: null
+  storedVersions:
+  - v1alpha1
