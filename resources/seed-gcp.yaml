@@ -1,0 +1,27 @@
+apiVersion: core.gardener.cloud/v1beta1
+kind: Seed
+metadata:
+  name: gcp-seed
+spec:
+  provider:
+    type: gcp
+    region: europe-west1
+    zones:
+    - europe-west1-b
+    - europe-west1-c
+    - europe-west1-d
+  dns:
+    provider:
+      type: google-clouddns
+      secretRef:
+        name: ingress-secret
+        namespace: garden
+  networks:
+    ipFamilies:
+    - IPv4
+    nodes: 10.240.0.0/16
+    pods: 10.241.128.0/17
+    services: 10.241.0.0/17
+  settings:
+    scheduling:
+      visible: true

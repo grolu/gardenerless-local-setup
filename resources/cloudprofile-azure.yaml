@@ -1,0 +1,37 @@
+apiVersion: core.gardener.cloud/v1beta1
+kind: CloudProfile
+metadata:
+  name: azure
+spec:
+  type: azure
+  kubernetes:
+    versions:
+    - version: 1.28.2
+    - version: 1.23.8
+      expirationDate: "2022-10-31T23:59:59Z"
+  machineImages:
+  - name: coreos
+    versions:
+    - version: 2135.6.0
+  machineTypes:
+  - name: Standard_D3_v2
+    cpu: "4"
+    gpu: "0"
+    memory: 14Gi
+  - name: Standard_D4_v3
+    cpu: "4"
+    gpu: "0"
+    memory: 16Gi
+  volumeTypes:
+  - name: Standard_LRS
+    class: standard
+    usable: true
+  - name: StandardSSD_LRS
+    class: premium
+    usable: false
+  - name: Premium_LRS
+    class: premium
+    usable: false
+  regions:
+  - name: westeurope
+  providerConfig:

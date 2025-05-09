@@ -1,0 +1,59 @@
+status:
+  conditions:
+    - type: APIServerAvailable
+      status: 'True'
+      lastTransitionTime: '2025-05-08T02:35:06Z'
+      lastUpdateTime: '2025-05-08T02:35:06Z'
+      reason: HealthzRequestSucceeded
+      message: API server /healthz endpoint responded with success status code.
+    - type: ControlPlaneHealthy
+      status: 'True'
+      lastTransitionTime: '2025-05-08T11:07:36Z'
+      lastUpdateTime: '2025-05-08T11:07:36Z'
+      reason: ControlPlaneRunning
+      message: All control plane components are healthy.
+    - type: ObservabilityComponentsHealthy
+      status: 'True'
+      lastTransitionTime: '2025-05-08T14:06:23Z'
+      lastUpdateTime: '2025-05-08T14:06:23Z'
+      reason: ObservabilityComponentsRunning
+      message: All observability components are healthy.
+    - type: EveryNodeReady
+      status: 'True'
+      lastTransitionTime: '2025-05-08T02:35:06Z'
+      lastUpdateTime: '2025-05-08T02:35:06Z'
+      reason: EveryNodeReady
+      message: All nodes are ready.
+    - type: SystemComponentsHealthy
+      status: 'True'
+      lastTransitionTime: '2025-05-08T02:35:06Z'
+      lastUpdateTime: '2025-05-08T02:35:06Z'
+      reason: SystemComponentsRunning
+      message: All system components are healthy.
+  constraints:
+    - type: APIServerProxyUsesHTTPProxy
+      status: 'True'
+      lastTransitionTime: '2025-04-09T17:09:57Z'
+      lastUpdateTime: '2025-04-09T17:09:57Z'
+      reason: APIServerProxyUsesHTTPProxy
+      message: The API server proxy was reconfigured to use the HTTP proxy method.
+    - type: HibernationPossible
+      status: 'True'
+      lastTransitionTime: '2025-05-08T02:35:06Z'
+      lastUpdateTime: '2025-05-08T02:35:06Z'
+      reason: NoProblematicWebhooks
+      message: All webhooks are properly configured.
+    - type: MaintenancePreconditionsSatisfied
+      status: 'True'
+      lastTransitionTime: '2025-05-08T02:35:06Z'
+      lastUpdateTime: '2025-05-08T02:35:06Z'
+      reason: NoProblematicWebhooks
+      message: All webhooks are properly configured.
+  gardener:
+    id: abcd1234-5678-90ab-cdef-1234567890ab
+    name: gardenlet-foo
+    version: v1
+  hibernated: false
+  technicalID: shoot--NAMESPACEPLACEHOLDER--NAMEPLACEHOLDER
+  uid: 123456781234-NAMESPACEPLACEHOLDER-NAMEPLACEHOLDER
+

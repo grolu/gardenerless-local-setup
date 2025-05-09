@@ -1,0 +1,26 @@
+apiVersion: core.gardener.cloud/v1beta1
+kind: Seed
+metadata:
+  name: alicloud-seed
+spec:
+  provider:
+    type: alicloud
+    region: eu-central-1
+    zones:
+    - eu-central-1a
+    - eu-central-1b
+  dns:
+    provider:
+      type: alicloud-dns
+      secretRef:
+        name: ingress-secret
+        namespace: garden
+  networks:
+    ipFamilies:
+    - IPv4
+    nodes: 10.240.0.0/16
+    pods: 10.241.128.0/17
+    services: 10.241.0.0/17
+  settings:
+    scheduling:
+      visible: true

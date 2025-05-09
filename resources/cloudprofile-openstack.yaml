@@ -1,0 +1,44 @@
+apiVersion: core.gardener.cloud/v1beta1
+kind: CloudProfile
+metadata:
+  name: openstack
+spec:
+  type: openstack
+  kubernetes:
+    versions:
+    - version: 1.32.0
+    - version: 1.31.1
+      expirationDate: "2026-03-31T23:59:59Z"
+  machineImages:
+  - name: coreos
+    versions:
+    - version: 2135.6.0
+      architectures:
+      - amd64
+      - arm64
+  machineTypes:
+  - name: medium_4_8
+    cpu: "4"
+    gpu: "0"
+    memory: 8Gi
+    architecture: amd64
+    storage:
+      class: standard
+      type: default
+      size: 40Gi
+  - name: medium_4_8_arm
+    cpu: "4"
+    gpu: "0"
+    memory: 8Gi
+    architecture: arm64
+    storage:
+      class: standard
+      type: default
+      size: 40Gi
+  regions:
+  - name: europe-1
+    zones:
+    - name: europe-1a
+    - name: europe-1b
+    - name: europe-1c
+  providerConfig:

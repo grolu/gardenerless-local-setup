@@ -1,15 +1,11 @@
 #!/bin/bash
-# kcp Local Management Script (refactored)
-# -------------------------------------------------
-# Adds concise progress messages and trims verbose
-# comments while preserving original behaviour.
-# -------------------------------------------------
 
 set -o pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+RES_DIR="${SCRIPT_DIR}/resources"
 KCP_DIR="${SCRIPT_DIR}/kcp"
 KCP_REPO="https://github.com/kcp-dev/kcp.git"
 ORIG_KUBECONFIG="${KCP_DIR}/.kcp/admin.kubeconfig"
@@ -47,11 +43,18 @@ create_kubeconfig() {
     echo -e "${YELLOW}Creating kubeconfig for workspace '$ws'...${NC}"
     cp "$TMP_KUBECONFIG" "$dest"
 
-    # use env to set KUBECONFIG only for this single invocation
+    # always start from the root workspace
     run_quiet env KUBECONFIG="$dest" kubectl config use-context root
     run_quiet env KUBECONFIG="$dest" kubectl ws :root
 
+    # if we're targeting a non-base workspace, pre-switch into root:<ws>
+    if [[ "$ws" != "base" ]]; then
+        run_quiet env KUBECONFIG="$dest" kubectl ws ":root:$ws"
+    fi
+
+    # now try to use the workspace-named context…
     if ! run_silent env KUBECONFIG="$dest" kubectl config use-context "$ws"; then
+        # …and if it doesn't exist yet, rename whatever current-context is into $ws
         cur=$(env KUBECONFIG="$dest" kubectl config current-context)
         run_quiet env KUBECONFIG="$dest" kubectl config rename-context "$cur" "$ws"
         run_quiet env KUBECONFIG="$dest" kubectl config use-context "$ws"
@@ -66,9 +69,15 @@ setup_gardener_crds() {
     sleep 5
 }
 
+apply_cluster_resources() {
+    echo -e "${YELLOW}Applying cluster resources...${NC}"
+    run_quiet kubectl apply -f "$RES_DIR/cloudprofile-*.yaml"
+    run_quiet kubectl apply -f "$RES_DIR/seed-*.yaml"
+}
+
 create_project_resource() {
     echo -e "${YELLOW}Creating project resource '$1'...${NC}"
-    apply_yaml_template "${SCRIPT_DIR}/project-template.yaml" "$1" "$2" | kubectl apply -f - >/dev/null
+    apply_yaml_template "${RES_DIR}/project-template.yaml" "$1" "$2" | kubectl apply -f - >/dev/null
 }
 
 patch_project_status() {
@@ -108,17 +117,17 @@ start_kcp_server() {
 
 get_shoots() {
     case "$1:$2" in
-        demo-animals:cat) echo "cat-alpha cat-beta" ;;
-        demo-animals:dog) echo "dog-alpha dog-beta" ;;
-        demo-plants:pine) echo "pine-oak pine-maple" ;;
-        demo-plants:rose) echo "rose-blossom rose-petal" ;;
-        demo-plants:sunflower) echo "sunflower-sunny" ;;
-        demo-cars:bmw) echo "bmw-m3 bmw-x5" ;;
-        demo-cars:mercedes) echo "merc-c300 merc-e350" ;;
-        demo-cars:tesla) echo "tesla-model3 tesla-models" ;;
-        demo:pine) echo "pine-oak pine-maple" ;;
-        demo:rose) echo "rose-blossom rose-petal" ;;
-        demo:sunflower) echo "sunflower-sunny" ;;
+        demo-animals:cat) echo "cat-alpha cat-error" ;;
+        demo-animals:dog) echo "dog-alpha dog-error" ;;
+        demo-plants:pine) echo "pine-oak pine-error" ;;
+        demo-plants:rose) echo "rose-blossom rose-error" ;;
+        demo-plants:sunflower) echo "sunflower-sunny sunflower-error" ;;
+        demo-cars:bmw) echo "bmw-m3 bmw-x5 bmw-error" ;;
+        demo-cars:mercedes) echo "merc-c300 merc-e350 merc-error" ;;
+        demo-cars:tesla) echo "tesla-model3 tesla-models tesla-error" ;;
+        demo:pine) echo "pine-oak pine-error" ;;
+        demo:rose) echo "rose-blossom rose-error" ;;
+        demo:sunflower) echo "sunflower-sunny sunflower-error" ;;
     esac
 }
 
@@ -192,11 +201,36 @@ if [ -n "$WORKSPACE_PARAM" ]; then
     for ws in "${parts[@]:1}"; do run_quiet kubectl ws "$ws"; done
 fi
 
+create_shoot () {
+    local name=$1 ns=$2
+    local statusError=false
+    if [[ $name == *-error ]]; then
+        statusError=true
+    fi
+    echo -e "${YELLOW}Creating shoot resource '$name' in namespace '$ns'...${NC}"
+    apply_yaml_template "${RES_DIR}/shoot-template.yaml" "$name" "$ns" | kubectl apply -n "$ns" -f - >/dev/null
+    if [ "$statusError" = true ]; then
+        echo -e "${YELLOW}Marking shoot '$name' as Error...${NC}"
+        patch_data=$(< "${RES_DIR}/shoot-status-error.yaml")
+    else
+        echo -e "${YELLOW}Marking shoot '$name' as Ready...${NC}"
+        patch_data=$(< "${RES_DIR}/shoot-status-ready.yaml")
+    fi
+    patch_data=$(echo "$patch_data" | sed -e "s/NAMESPACEPLACEHOLDER/$ns/g" -e "s/NAMEPLACEHOLDER/$name/g")
+    local json_patch=$(echo "$patch_data" | yq -o=json) 
+    run_quiet kubectl patch shoot "$name" -n "$ns" --type=merge --subresource=status --patch "$json_patch"
+
+}
+
+generate_uid() {
+    tr -dc a-z0-9 </dev/urandom | head -c10
+}
+
 bulk_projects() {
-    local count=$1 prefix=${2:-project}
+    local count=$1
     echo -e "${YELLOW}Bulk-creating $count project(s)...${NC}"
     for ((i=1;i<=count;i++)); do
-        name=$(printf "%s-%04d" "$prefix" "$i")
+        name=$(generate_uid)
         NAMESPACE="garden-$name"
         run_silent kubectl get ns "$NAMESPACE" || run_quiet kubectl create ns "$NAMESPACE"
         create_project_resource "$name" "$NAMESPACE"
@@ -205,7 +239,7 @@ bulk_projects() {
 }
 
 bulk_shoots() {
-    local proj=$1 count=$2 prefix=${3:-shoot}
+    local proj=$1 count=$2
     local ns="garden-$proj"
     if ! run_silent kubectl get ns "$ns"; then
         echo -e "${RED}project ns $ns not found${NC}"
@@ -213,8 +247,8 @@ bulk_shoots() {
     fi
     echo -e "${YELLOW}Creating $count shoot(s) in project '$proj'...${NC}"
     for ((i=1;i<=count;i++)); do
-        sname=$(printf "%s-%04d" "$prefix" "$i")
-        apply_yaml_template "${SCRIPT_DIR}/shoot-template.yaml" "$sname" "$ns" | kubectl apply -n "$ns" -f - >/dev/null
+        sname=$(generate_uid)
+        create_shoot "$sname" "$ns"
     done
 }
 
@@ -223,10 +257,13 @@ create_demo_ws() {
     echo -e "${YELLOW}Creating demo workspace $ws...${NC}"
     switch_to_root
     run_silent kubectl ws create "$ws" --enter || run_quiet kubectl ws "$ws"
+    echo -e "${YELLOW}Setting up dashboard-suer service account...${NC}"
+    run_quiet kubectl create ns garden
+    run_quiet kubectl create sa dashboard-user -n garden
+    run_quiet kubectl create clusterrolebinding cluster-admin --clusterrole=cluster-admin --serviceaccount=garden:dashboard-user
+    run_quiet kubectl set subject clusterrolebinding cluster-admin --serviceaccount=garden:dashboard-user
     setup_gardener_crds
-    echo -e "${YELLOW}Setting up cluster resources...${NC}"
-    run_quiet kubectl apply -f cloudprofile.yaml
-    run_quiet kubectl apply -f seed.yaml
+    apply_cluster_resources
     case "$ws" in
         demo-animals) projects="cat dog" ;;
         demo-plants)  projects="pine rose sunflower" ;;
@@ -239,10 +276,10 @@ create_demo_ws() {
         create_project_resource "$proj" "$ns"
         patch_project_status "$proj"
         for shoot in $(get_shoots "$ws" "$proj"); do
-            apply_yaml_template "${SCRIPT_DIR}/shoot-template.yaml" "$shoot" "$ns" | kubectl apply -n "$ns" -f - >/dev/null
+            create_shoot "$shoot" "$ns"
         done
-        apply_yaml_template "${SCRIPT_DIR}/secret-template.yaml" "aws-secret" "$ns" | kubectl apply -n "$ns" -f - >/dev/null
-        apply_yaml_template "${SCRIPT_DIR}/secretbinding-template.yaml" "aws-secret-binding" "$ns" | kubectl apply -n "$ns" -f - >/dev/null
+        apply_yaml_template "${RES_DIR}/secret-template.yaml" "aws-secret" "$ns" | kubectl apply -n "$ns" -f - >/dev/null
+        apply_yaml_template "${RES_DIR}/secretbinding-template.yaml" "aws-secret-binding" "$ns" | kubectl apply -n "$ns" -f - >/dev/null
     done
 }
 
@@ -277,7 +314,7 @@ case "$COMMAND" in
         [ ${#ARGS[@]} -lt 2 ] && { echo "usage: add-shoot <shoot> <project>" >&2; exit 1; }
         ns="garden-${ARGS[1]}"
         echo -e "${YELLOW}Adding shoot '${ARGS[0]}' to project '${ARGS[1]}'...${NC}"
-        apply_yaml_template "${SCRIPT_DIR}/shoot-template.yaml" "${ARGS[0]}" "$ns" | kubectl apply -n "$ns" -f - >/dev/null
+        create_shoot "${ARGS[0]}" "$ns"
         ;;
     add-projects)
         [ ${#ARGS[@]} -lt 1 ] && { echo "usage: add-projects <count>" >&2; exit 1; }
@@ -288,16 +325,9 @@ case "$COMMAND" in
         bulk_shoots "${ARGS[0]}" "${ARGS[1]}"
         ;;
     cluster-resources)
-        setup_gardener_crds
-        echo -e "${YELLOW}Setting up cluster resources...${NC}"
-        run_quiet kubectl apply -f cloudprofile.yaml
-        run_quiet kubectl apply -f seed.yaml
+        apply_cluster_resources
         ;;
     get-token)
-        run_silent kubectl get ns garden || run_quiet kubectl create ns garden
-        run_silent kubectl get sa dashboard-user -n garden || run_quiet kubectl create sa dashboard-user -n garden
-        run_silent kubectl get crb cluster-admin || run_quiet kubectl create clusterrolebinding cluster-admin --clusterrole=cluster-admin --serviceaccount=garden:dashboard-user
-        run_quiet kubectl set subject clusterrolebinding cluster-admin --serviceaccount=garden:dashboard-user
         kubectl -n garden create token dashboard-user --duration 24h
         ;;
     reset-kcp)        rm -rf "$KCP_DIR/.kcp" ;;

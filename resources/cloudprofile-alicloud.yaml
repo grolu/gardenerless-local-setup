@@ -1,0 +1,31 @@
+apiVersion: core.gardener.cloud/v1beta1
+kind: CloudProfile
+metadata:
+  name: alicloud
+spec:
+  type: alicloud
+  kubernetes:
+    versions:
+    - version: 1.32.0
+    - version: 1.31.1
+      expirationDate: "2026-03-31T23:59:59Z"
+  machineImages:
+  - name: coreos
+    versions:
+    - version: 2023.4.0
+  machineTypes:
+  - name: ecs.sn2ne.large
+    cpu: "2"
+    gpu: "0"
+    memory: 8Gi
+  volumeTypes:
+  - name: cloud_efficiency
+    class: standard
+  - name: cloud_essd
+    class: premium
+  regions:
+  - name: eu-central-1
+    zones:
+    - name: eu-central-1a
+    - name: eu-central-1b
+  providerConfig:

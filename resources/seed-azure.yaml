@@ -1,0 +1,27 @@
+apiVersion: core.gardener.cloud/v1beta1
+kind: Seed
+metadata:
+  name: azure-seed
+spec:
+  provider:
+    type: azure
+    region: westeurope
+    zones:
+    - "1"
+    - "2"
+    - "3"
+  dns:
+    provider:
+      type: azure-dns
+      secretRef:
+        name: ingress-secret
+        namespace: garden
+  networks:
+    ipFamilies:
+    - IPv4
+    nodes: 10.240.0.0/16
+    pods: 10.241.128.0/17
+    services: 10.241.0.0/17
+  settings:
+    scheduling:
+      visible: true

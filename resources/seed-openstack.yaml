@@ -1,18 +1,18 @@
-# Seed cluster registration manifest into which the control planes of Shoot clusters will be deployed.
----
 apiVersion: core.gardener.cloud/v1beta1
 kind: Seed
 metadata:
-  name: aws-seed
+  name: openstack-seed
 spec:
   provider:
-    type: aws
+    type: openstack
     region: europe-1
     zones:
     - europe-1a
+    - europe-1b
+    - europe-1c
   dns:
     provider:
-      type: aws-route53
+      type: openstack-designate
       secretRef:
         name: ingress-secret
         namespace: garden

@@ -17,7 +17,7 @@ spec:
     versions:
     - version: 15.4.20220818
     - version: 15.4.20220620
-      expirationDate: "2023-02-28T23:59:59Z"
+      expirationDate: "2030-02-28T23:59:59Z"
   - name: ubuntu
     versions:
     - version: 18.04.201906170
