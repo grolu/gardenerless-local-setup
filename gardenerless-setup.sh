@@ -1,205 +1,285 @@
 #!/bin/bash
-
 set -o pipefail
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[0;33m'
+BLUE=$'\033[0;34m'
+NC=$'\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# logging helpers (keep using echo -e for ANSI colors)
+log_info()  { echo -e "$*";                  }
+log_error() { echo -e "$*" >&2;              }
+
+# timestamp helper
+now()       { date -u +%Y-%m-%dT%H:%M:%SZ;    }
 
 RES_DIR="${SCRIPT_DIR}/resources"
 KCP_DIR="${SCRIPT_DIR}/kcp"
 KCP_REPO="https://github.com/kcp-dev/kcp.git"
 ORIG_KUBECONFIG="${KCP_DIR}/.kcp/admin.kubeconfig"
-
 dashboard_kcp_cfg="${KCP_DIR}/.kcp/dashboard-kcp.kubeconfig"
 dashboard_single_cfg="${KCP_DIR}/.kcp/dashboard.kubeconfig"
 
-# -------------------------------------------------
-# Quiet / silent wrappers --------------------------------
+# quiet / silent wrappers
 run_quiet()  { "$@" >/dev/null; }
 run_silent() { "$@" >/dev/null 2>&1; }
-# -------------------------------------------------
 
 init_temp_kubeconfig() {
-    TMP_KUBECONFIG=$(mktemp)
-    cp "$ORIG_KUBECONFIG" "$TMP_KUBECONFIG"
-    export KUBECONFIG="$TMP_KUBECONFIG"
-    trap "rm -f $TMP_KUBECONFIG" EXIT
+  TMP_KUBECONFIG=$(mktemp)
+  cp "$ORIG_KUBECONFIG" "$TMP_KUBECONFIG"
+  export KUBECONFIG="$TMP_KUBECONFIG"
+  trap "rm -f $TMP_KUBECONFIG" EXIT
 }
 
 switch_to_root() {
-    run_quiet kubectl config use-context root
-    run_quiet kubectl ws :root
+  run_quiet kubectl config use-context root
+  run_quiet kubectl ws :root
 }
 
 apply_yaml_template() {
-    sed -e "s/NAMESPACEPLACEHOLDER/$3/g" -e "s/NAMEPLACEHOLDER/$2/g" "$1"
+  sed -e "s/NAMESPACEPLACEHOLDER/$3/g" \
+      -e "s/NAMEPLACEHOLDER/$2/g" "$1"
 }
 
-# ----------------------------------------------------
-# create_kubeconfig <dest> <workspace>
-# ----------------------------------------------------
 create_kubeconfig() {
-    local dest="$1"; local ws="$2"
-    echo -e "${YELLOW}Creating kubeconfig for workspace '$ws'...${NC}"
-    cp "$TMP_KUBECONFIG" "$dest"
-
-    # always start from the root workspace
-    run_quiet env KUBECONFIG="$dest" kubectl config use-context root
-    run_quiet env KUBECONFIG="$dest" kubectl ws :root
-
-    # if we're targeting a non-base workspace, pre-switch into root:<ws>
-    if [[ "$ws" != "base" ]]; then
-        run_quiet env KUBECONFIG="$dest" kubectl ws ":root:$ws"
-    fi
-
-    # now try to use the workspace-named context…
-    if ! run_silent env KUBECONFIG="$dest" kubectl config use-context "$ws"; then
-        # …and if it doesn't exist yet, rename whatever current-context is into $ws
-        cur=$(env KUBECONFIG="$dest" kubectl config current-context)
-        run_quiet env KUBECONFIG="$dest" kubectl config rename-context "$cur" "$ws"
-        run_quiet env KUBECONFIG="$dest" kubectl config use-context "$ws"
-    fi
+  local dest="$1" ws="$2"
+  log_info "${YELLOW}Creating kubeconfig for workspace '$ws'...${NC}"
+  cp "$TMP_KUBECONFIG" "$dest"
+  run_quiet env KUBECONFIG="$dest" kubectl config use-context root
+  run_quiet env KUBECONFIG="$dest" kubectl ws :root
+  if [[ "$ws" != "base" ]]; then
+    run_quiet env KUBECONFIG="$dest" kubectl ws ":root:$ws"
+  fi
+  if ! run_silent env KUBECONFIG="$dest" kubectl config use-context "$ws"; then
+    cur=$(env KUBECONFIG="$dest" kubectl config current-context)
+    run_quiet env KUBECONFIG="$dest" kubectl config rename-context "$cur" "$ws"
+    run_quiet env KUBECONFIG="$dest" kubectl config use-context "$ws"
+  fi
 }
 
 setup_gardener_crds() {
-    echo -e "${YELLOW}Setting up Gardener CRDs...${NC}"
-    run_quiet kubectl apply -f "${SCRIPT_DIR}/crds/"
-    echo -e "${GREEN}Gardener CRDs set up successfully.${NC}"
-    echo -e "${YELLOW}Waiting 5 seconds for APIs to become available...${NC}"
-    sleep 5
+  log_info "${YELLOW}Setting up Gardener CRDs...${NC}"
+  run_quiet kubectl apply -f "${SCRIPT_DIR}/crds/"
+  log_info "${GREEN}Gardener CRDs set up successfully.${NC}"
+  log_info "${YELLOW}Waiting 5 seconds for APIs to become available...${NC}"
+  sleep 5
 }
 
 apply_cluster_resources() {
-    echo -e "${YELLOW}Applying cluster resources...${NC}"
-    run_quiet kubectl apply -f "$RES_DIR/cloudprofile-*.yaml"
-    run_quiet kubectl apply -f "$RES_DIR/seed-*.yaml"
+  log_info "${YELLOW}Applying cluster resources...${NC}"
+  run_quiet kubectl apply -f "$RES_DIR/cloudprofile-*.yaml"
+  run_quiet kubectl apply -f "$RES_DIR/seed-*.yaml"
 }
 
 create_project_resource() {
-    echo -e "${YELLOW}Creating project resource '$1'...${NC}"
-    apply_yaml_template "${RES_DIR}/project-template.yaml" "$1" "$2" | kubectl apply -f - >/dev/null
+  log_info "${YELLOW}Creating project resource '$1'...${NC}"
+  apply_yaml_template "$RES_DIR/project-template.yaml" "$1" "$2" \
+    | run_quiet kubectl apply -f -
 }
 
 patch_project_status() {
-    echo -e "${YELLOW}Marking project '$1' as Ready...${NC}"
-    run_quiet kubectl patch project "$1" --type=merge --subresource=status -p '{"status":{"phase":"Ready"}}'
+  log_info "${YELLOW}Marking project '$1' as Ready...${NC}"
+  run_quiet kubectl patch project "$1" \
+    --type=merge --subresource=status -p '{"status":{"phase":"Ready"}}'
 }
 
 setup_kcp() {
-    if [ -d "$KCP_DIR" ]; then
-        echo -e "${YELLOW}Resetting kcp repo to latest HEAD...${NC}"
-        run_quiet git -C "$KCP_DIR" fetch --all
-        run_quiet git -C "$KCP_DIR" reset --hard origin/main
-    else
-        echo -e "${YELLOW}Cloning kcp repo...${NC}"
-        run_quiet git clone "$KCP_REPO" "$KCP_DIR"
-    fi
-    echo -e "${YELLOW}Building kcp...${NC}"
-    export IGNORE_GO_VERSION=1
-    (cd "$KCP_DIR" && run_quiet make build)
-    echo -e "${GREEN}kcp built successfully.${NC}"
+  if [ -d "$KCP_DIR" ]; then
+    log_info "${YELLOW}Resetting kcp repo to latest HEAD...${NC}"
+    run_quiet git -C "$KCP_DIR" fetch --all
+    run_quiet git -C "$KCP_DIR" reset --hard origin/main
+  else
+    log_info "${YELLOW}Cloning kcp repo...${NC}"
+    run_quiet git clone "$KCP_REPO" "$KCP_DIR"
+  fi
+  log_info "${YELLOW}Building kcp...${NC}"
+  export IGNORE_GO_VERSION=1
+  (cd "$KCP_DIR" && run_quiet make build)
+  log_info "${GREEN}kcp built successfully.${NC}"
 }
 
 configure_macos_alias() {
-    if [ "$(uname)" = "Darwin" ] && ! ifconfig lo0 | grep -q "192.168.65.1"; then
-        echo -e "${YELLOW}Adding lo0 alias 192.168.65.1/24 (sudo)...${NC}"
-        sudo ifconfig lo0 alias 192.168.65.1/24 >/dev/null
-    fi
+  if [[ "$(uname)" == "Darwin" ]] && ! ifconfig lo0 | grep -q "192.168.65.1"; then
+    log_info "${YELLOW}Adding lo0 alias 192.168.65.1/24 (sudo)...${NC}"
+    sudo ifconfig lo0 alias 192.168.65.1/24 >/dev/null
+  fi
 }
 
 start_kcp_server() {
-    pgrep -f "$KCP_DIR/bin/kcp" && { echo -e "${GREEN}kcp server already running.${NC}"; exit 0; }
-    configure_macos_alias
-    echo -e "${YELLOW}Starting kcp server...${NC}"
-    cd "$KCP_DIR"
-    exec ./bin/kcp start --bind-address=192.168.65.1
+  if pgrep -f "$KCP_DIR/bin/kcp"; then
+    log_info "${GREEN}kcp server already running.${NC}"
+    exit 0
+  fi
+  configure_macos_alias
+  log_info "${YELLOW}Starting kcp server...${NC}"
+  cd "$KCP_DIR"
+  exec ./bin/kcp start --bind-address=192.168.65.1
 }
 
 get_shoots() {
-    case "$1:$2" in
-        demo-animals:cat) echo "cat-alpha cat-error" ;;
-        demo-animals:dog) echo "dog-alpha dog-error" ;;
-        demo-plants:pine) echo "pine-oak pine-error" ;;
-        demo-plants:rose) echo "rose-blossom rose-error" ;;
-        demo-plants:sunflower) echo "sunflower-sunny sunflower-error" ;;
-        demo-cars:bmw) echo "bmw-m3 bmw-x5 bmw-error" ;;
-        demo-cars:mercedes) echo "merc-c300 merc-e350 merc-error" ;;
-        demo-cars:tesla) echo "tesla-model3 tesla-models tesla-error" ;;
-        demo:pine) echo "pine-oak pine-error" ;;
-        demo:rose) echo "rose-blossom rose-error" ;;
-        demo:sunflower) echo "sunflower-sunny sunflower-error" ;;
-    esac
+  case "$1:$2" in
+    demo-animals:cat)        echo "cat-alpha cat-error"      ;;
+    demo-animals:dog)        echo "dog-alpha dog-error"      ;;
+    demo-plants:pine)        echo "pine-oak pine-error"      ;;
+    demo-plants:rose)        echo "rose-blossom rose-error"  ;;
+    demo-plants:sunflower)   echo "sunflower-sunny sunflower-error" ;;
+    demo-cars:bmw)           echo "bmw-m3 bmw-x5 bmw-error"  ;;
+    demo-cars:mercedes)      echo "merc-c300 merc-e350 merc-error" ;;
+    demo-cars:tesla)         echo "tesla-model3 tesla-models tesla-error" ;;
+    demo:pine)               echo "pine-oak pine-error"      ;;
+    demo:rose)               echo "rose-blossom rose-error"  ;;
+    demo:sunflower)          echo "sunflower-sunny sunflower-error" ;;
+  esac
 }
 
-show_help() {
-    cat <<EOF
-$(echo -e "${BLUE}Usage:${NC}") $0 [--workspace <ws>] <command> [args]
+# toggles a single shoot between ready and error
+toggle_shoot_status() {
+  local shoot="$1" project="$2" mode="$3"
+  if [[ -z "$shoot" || -z "$project" || ( "$mode" != "error" && "$mode" != "ready" ) ]]; then
+    log_error "Usage: set-shoot-status --shoot <shoot> --project ≤project> <error|ready>"
+    exit 1
+  fi
 
-This tool operates on the kcp admin.kubeconfig. It works with the workspace set in this KUBECONFIG. 
-You can overwrite the workspace using the $(echo -e "${YELLOW}--workspace <ws>${NC}") option. 
-The script only operates on workspaces directly under root (no deep nesting). 
-Exceptions are $(echo -e "${GREEN}create-demo-workspaces${NC}") and $(echo -e "${GREEN}create-single-demo-workspace${NC}"), 
-which will always create the workspace under root.
+  local labelValue
+  if [[ "$mode" == "error" ]]; then
+    labelValue="unhealthy"
+  else
+    labelValue="healthy"
+  fi
 
-Commands:
-  $(echo -e "${GREEN}setup-kcp${NC}")                    Download & build kcp
-  $(echo -e "${GREEN}start-kcp${NC}")                    Start kcp server (foreground)
-  $(echo -e "${GREEN}reset-kcp${NC}")                    Delete .kcp state
-  $(echo -e "${GREEN}reset-kcp-certs${NC}")              Delete cert/key files in .kcp
-  $(echo -e "${GREEN}setup-gardener-crds${NC}")          Apply Gardener CRDs in the current workspace
-  $(echo -e "${GREEN}create-demo-workspaces${NC}")       Build demo workspaces (animals/plants/cars) with resources
-  $(echo -e "${GREEN}create-single-demo-workspace${NC}") Build one demo workspace with resources
-  $(echo -e "${GREEN}add-project <name>${NC}")           Add a project resource with status=ready
-  $(echo -e "${GREEN}add-shoot <shoot> <proj>${NC}")     Add one shoot resource to a project
-  $(echo -e "${GREEN}add-projects <count>${NC}")         Bulk create N projects (project-0001..N)
-  $(echo -e "${GREEN}add-shoots <proj> <count>${NC}")    Bulk create N shoots in a project
-  $(echo -e "${GREEN}dashboard-kubeconfigs${NC}")        Print paths of dashboard kubeconfigs
-  $(echo -e "${GREEN}cluster-resources${NC}")            Apply cloudprofile & seed yamls
-  $(echo -e "${GREEN}get-token${NC}")                    Print dashboard-user service account token
+  local ns="garden-${project}"
+  if ! run_silent kubectl get ns "$ns"; then
+    log_error "Error: namespace '$ns' not found"
+    exit 1
+  fi
 
-EOF
-    exit 0
+  local tpl="$RES_DIR/shoot-status-${mode}.yaml"
+  if [[ ! -f "$tpl" ]]; then
+    log_error "Error: template '$tpl' not found"
+    exit 1
+  fi
+
+  local now
+  now="$(now)"
+
+  local patch_yaml
+  patch_yaml=$(
+    apply_yaml_template "$tpl" "$shoot" "$ns" \
+      | sed -E "s/DATEPLACEHOLDER/${now}/g"
+  )
+
+  local json_patch
+  json_patch=$(echo "$patch_yaml" | yq -o=json)
+
+  run_quiet kubectl patch shoot "$shoot" -n "$ns" \
+    --type=merge --subresource=status -p "$json_patch"
+  run_quiet kubectl label shoot "$shoot" -n "$ns" \
+    shoot.gardener.cloud/status="${labelValue}" --overwrite
 }
 
-# -------------------------------------------------
-WORKSPACE_PARAM=""; COMMAND=""; ARGS=()
-while [ $# -gt 0 ]; do
-    case "$1" in
-        --workspace) WORKSPACE_PARAM="$2"; shift 2 ;;
-        -h|--help|help) show_help ;;
-        *) [ -z "$COMMAND" ] && COMMAND="$1" || ARGS+=("$1"); shift ;;
-    esac
-done
-[ -z "$COMMAND" ] && show_help
+# every $interval seconds, pick a random shoot (optionally per project) and flip it
+random_update_shoots() {
+  local project interval ns resource="shoots.core.gardener.cloud"
+  local shoots pairs pair shoot proj curState target
 
-if [[ "$COMMAND" != "setup-kcp" && "$COMMAND" != "start-kcp" ]]; then
-    if [ ! -f "$KCP_DIR/bin/kcp" ]; then
-        echo -e "${RED}Missing kcp binary.\nPlease use 'setup-kcp' to download and build kcp first.${NC}"
-        exit 1
+  if [[ $# -eq 1 ]]; then
+    project=""; interval="$1"
+  elif [[ $# -eq 2 ]]; then
+    project="$1"; interval="$2"
+  else
+    log_error "Usage: random-update-shoots [--project project] --interval <seconds>"
+    exit 1
+  fi
+
+  if [[ -n "$project" ]]; then
+    ns="garden-${project}"
+    if ! run_silent kubectl get ns "$ns"; then
+      log_error "Error: namespace '$ns' not found"
+      exit 1
     fi
-fi
+    log_info "${YELLOW}Toggling shoots in '$ns' every ${interval}s${NC}"
+  else
+    log_info "${YELLOW}Toggling shoots across all garden-* namespaces every ${interval}s${NC}"
+  fi
 
-needs_kubeconfig=true
-[[ "$COMMAND" =~ ^(setup-kcp|start-kcp|reset-kcp|reset-kcp-certs)$ ]] && needs_kubeconfig=false
+  while true; do
+    sleep "$interval"
 
-if $needs_kubeconfig; then
-    if ! pgrep -f "[k]cp" >/dev/null 2>&1; then
-        echo -e "${RED}No running kcp server detected.\nPlease start one with 'start-kcp' first.${NC}"
-        exit 1
+    if [[ -n "$project" ]]; then
+      read -r -a shoots < <(
+        kubectl get "$resource" -n "$ns" \
+          -o jsonpath='{range .items[*]}{.metadata.name}{" "}{end}'
+      )
+      (( ${#shoots[@]} )) || { log_info "⚠ no shoots in namespace $ns"; continue; }
+      shoot="${shoots[RANDOM % ${#shoots[@]}]}"
+    else
+      read -r -a pairs < <(
+        kubectl get "$resource" -A \
+          -o jsonpath='{range .items[*]}{.metadata.namespace}:{.metadata.name}{"\n"}{end}' \
+        | grep '^garden-' | tr '\n' ' '
+      )
+      (( ${#pairs[@]} )) || { log_info "⚠ no shoots in any garden-* namespace"; continue; }
+      pair="${pairs[RANDOM % ${#pairs[@]}]}"
+      ns="${pair%%:*}"; shoot="${pair#*:}"
     fi
-    if [ ! -f "$ORIG_KUBECONFIG" ]; then
-        echo -e "${RED}Missing admin kubeconfig.\nPlease use 'start-kcp' to run a local kcp server first.${NC}"
-        exit 1
-    fi
-    init_temp_kubeconfig
-fi
 
-if [ -n "$WORKSPACE_PARAM" ]; then
-    IFS=':' read -ra parts <<<"$WORKSPACE_PARAM"
-    [ "${parts[0]}" != "root" ] && parts=("root" "${parts[@]}")
-    switch_to_root
-    for ws in "${parts[@]:1}"; do run_quiet kubectl ws "$ws"; done
-fi
+    curState=$(kubectl get "$resource" "$shoot" -n "$ns" \
+      -o jsonpath='{.status.lastOperation.state}')
+    if [[ "$curState" == "Error" ]]; then target="ready"; else target="error"; fi
+
+    log_info "${YELLOW}– toggling shoot '$shoot' in '$ns' from '$curState' → '$target'${NC}"
+    proj="${project:-${ns#garden-}}"
+    toggle_shoot_status "$shoot" "$proj" "$target"
+  done
+}
+
+# simulate a long-running operation (Processing→Succeeded)
+simulate_shoot_operation() {
+  local shoot="$1" project="$2" interval="$3" step="$4"
+
+  # set defaults & validate
+  : "${interval:=5}"
+  : "${step:=10}"
+  if [[ -z "$shoot" || -z "$project" ]]; then
+    log_error "Missing --shoot or --project"
+    log_error "Usage: simulate-shoot-op --shoot|-s SHOOT --project|-p PROJECT --interval|-i INTERVAL [--step|-t STEP]"
+    exit 1
+  fi
+
+  local ns="garden-${project}"
+  local now progress=0
+
+  log_info "${YELLOW}Starting simulated operation on $shoot (interval ${interval}s, +${step}% each)${NC}"
+  while (( progress < 100 )); do
+    sleep "$interval"
+    progress=$(( progress + step ))
+    (( progress > 100 )) && progress=100
+    now="$(now)"
+    run_quiet kubectl patch shoot "$shoot" -n "$ns" --type=merge --subresource=status -p '{
+      "status":{
+        "lastOperation":{
+          "state":"Processing",
+          "progress":'"${progress}"',
+          "lastUpdateTime":"'"${now}"'"
+        }
+      }
+    }'
+    log_info "– $shoot: progress ${progress}%"
+  done
+  now="$(now)"
+  run_quiet kubectl patch shoot "$shoot" -n "$ns" --type=merge --subresource=status -p '{
+    "status":{
+      "lastOperation":{
+        "state":"Succeeded",
+        "progress":100,
+        "lastUpdateTime":"'"${now}"'"
+      }
+    }
+  }'
+  log_info "${GREEN}✔ $shoot: operation Succeeded${NC}"
+}
 
 create_shoot () {
     local name=$1 ns=$2
@@ -207,18 +287,20 @@ create_shoot () {
     if [[ $name == *-error ]]; then
         statusError=true
     fi
-    echo -e "${YELLOW}Creating shoot resource '$name' in namespace '$ns'...${NC}"
-    apply_yaml_template "${RES_DIR}/shoot-template.yaml" "$name" "$ns" | kubectl apply -n "$ns" -f - >/dev/null
+    log_info "${YELLOW}Creating shoot resource '$name' in namespace '$ns'...${NC}"
+    apply_yaml_template "${RES_DIR}/shoot-template.yaml" "$name" "$ns" \
+        | kubectl apply -n "$ns" -f - >/dev/null
+
+    # Derive project name from namespace (strip 'garden-')
+    local project="${ns#garden-}"
+
     if [ "$statusError" = true ]; then
-        echo -e "${YELLOW}Marking shoot '$name' as Error...${NC}"
-        patch_data=$(< "${RES_DIR}/shoot-status-error.yaml")
+        log_info "${YELLOW}Marking shoot '$name' as Error...${NC}"
+        toggle_shoot_status "$name" "$project" "error"
     else
-        echo -e "${YELLOW}Marking shoot '$name' as Ready...${NC}"
-        patch_data=$(< "${RES_DIR}/shoot-status-ready.yaml")
+        log_info "${YELLOW}Marking shoot '$name' as Ready...${NC}"
+        toggle_shoot_status "$name" "$project" "ready"
     fi
-    patch_data=$(echo "$patch_data" | sed -e "s/NAMESPACEPLACEHOLDER/$ns/g" -e "s/NAMEPLACEHOLDER/$name/g")
-    local json_patch=$(echo "$patch_data" | yq -o=json) 
-    run_quiet kubectl patch shoot "$name" -n "$ns" --type=merge --subresource=status --patch "$json_patch"
 
 }
 
@@ -283,54 +365,294 @@ create_demo_ws() {
     done
 }
 
-# -------------------------------------------------
+show_help() {
+  cat <<EOF
+${BLUE}Usage:${NC} $0 <command> [options]
+
+This tool operates on the kcp admin.kubeconfig. It works with the workspace set in this KUBECONFIG.
+You can overwrite the workspace using the ${YELLOW}--workspace|-ws <ws>${NC} option.
+The script only operates on workspaces directly under root (no deep nesting).
+Exceptions are ${GREEN}create-demo-workspaces${NC} and ${GREEN}create-single-demo-workspace${NC},
+which will always create the workspaces under root.
+
+Commands:
+  ${GREEN}setup-kcp${NC}
+      Download & build kcp
+
+  ${GREEN}start-kcp${NC}
+      Start kcp server (foreground)
+
+  ${GREEN}reset-kcp${NC}
+      Delete .kcp state
+
+  ${GREEN}reset-kcp-certs${NC}
+      Delete cert/key files in .kcp
+
+  ${GREEN}setup-gardener-crds${NC}
+      Apply Gardener CRDs in the current workspace
+
+  ${GREEN}cluster-resources${NC}
+      Apply cloudprofile & seed YAMLs
+
+  ${GREEN}get-token${NC}
+      Print dashboard-user service account token
+
+  ${GREEN}dashboard-kubeconfigs${NC}
+      Print paths of dashboard kubeconfigs
+
+  ${GREEN}create-demo-workspaces${NC}
+      Build demo workspaces (animals/plants/cars)
+
+  ${GREEN}create-single-demo-workspace${NC}
+      Build one demo workspace
+
+  ${GREEN}add-project${NC}
+      ${YELLOW}--name|-n NAME [--namespace|-N NAMESPACE]${NC}
+      Add a project (status=ready)
+
+  ${GREEN}add-shoot${NC}
+      ${YELLOW}--shoot|-s SHOOT --project|-p PROJECT${NC}
+      Add one shoot to a project
+
+  ${GREEN}add-projects${NC}
+      ${YELLOW}--count|-c COUNT${NC}
+      Bulk create N projects
+
+  ${GREEN}add-shoots${NC}
+      ${YELLOW}--project|-p PROJECT --count|-c COUNT${NC}
+      Bulk create N shoots in a project
+
+  ${GREEN}toggle-shoot-status${NC}
+      ${YELLOW}--shoot|-s SHOOT --project|-p PROJECT --mode|-m MODE${NC}
+      Toggle a single shoot's status (ready|error)
+
+  ${GREEN}random-update-shoots${NC}
+      ${YELLOW}[--project|-p PROJECT] --interval|-i INTERVAL${NC}
+      Periodically flip one shoot’s status
+
+  ${GREEN}simulate-shoot-op${NC}
+      ${YELLOW}--shoot|-s SHOOT --project|-p PROJECT --interval|-i INTERVAL [--step|-t STEP]${NC}
+      Simulate lastOperation.progress →100
+
+Options:
+  ${YELLOW}-h, --help${NC}
+      Show this help message and exit
+EOF
+  exit 0
+}
+
+# ────────────────────────────────────────────────
+# 1) Global flags
+WORKSPACE_PARAM=""
+ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --workspace|-ws)
+      if [[ -n "$2" && "${2:0:1}" != "-" ]]; then
+        WORKSPACE_PARAM="$2"
+        shift 2
+      else
+        echo -e "${RED}Error: --workspace requires a value${NC}" >&2
+        exit 1
+      fi
+      ;;
+    -h|--help)
+      show_help
+      ;;
+    *)
+      ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+set -- "${ARGS[@]}"
+
+# 2) Sub-command
+if [[ $# -lt 1 ]]; then show_help; fi
+COMMAND="$1"; shift
+
+# 3) Init kubeconfig & apply global workspace
+if [[ "$COMMAND" != "setup-kcp" && "$COMMAND" != "start-kcp" ]]; then
+  init_temp_kubeconfig
+  if [[ -n "$WORKSPACE_PARAM" ]]; then
+    IFS=':' read -ra parts <<<"$WORKSPACE_PARAM"
+    [[ "${parts[0]}" != "root" ]] && parts=(root "${parts[@]}")
+    switch_to_root
+    for ws in "${parts[@]:1}"; do
+      run_quiet kubectl ws "$ws"
+    done
+  fi
+fi
+
+# 4) Dispatch & per-command flag parsing
 case "$COMMAND" in
-    setup-kcp)        setup_kcp ;;
-    start-kcp)        start_kcp_server ;;
-    setup-gardener-crds) setup_gardener_crds ;;
-    create-demo-workspaces)
-        for dws in demo-animals demo-plants demo-cars; do create_demo_ws "$dws"; done
-        create_kubeconfig "$dashboard_kcp_cfg" base
-        echo -e "${GREEN}dashboard-kcp kubeconfig:${NC} $dashboard_kcp_cfg"
-        ;;
-    create-single-demo-workspace)
-        wsname="demo"
-        create_demo_ws "$wsname"
-        create_kubeconfig "$dashboard_single_cfg" "$wsname"
-        echo -e "${GREEN}dashboard kubeconfig:${NC} $dashboard_single_cfg"
-        ;;
-    dashboard-kubeconfigs)
-        echo -e "kcp-mode dashboard kubeconfig : $dashboard_kcp_cfg"
-        echo -e "single-workspace dashboard   : $dashboard_single_cfg"
-        ;;
-    add-project)
-        [ ${#ARGS[@]} -lt 1 ] && { echo "project name required" >&2; exit 1; }
-        NAMESPACE="garden-${ARGS[0]}"
-        run_silent kubectl get ns "$NAMESPACE" || run_quiet kubectl create ns "$NAMESPACE"
-        create_project_resource "${ARGS[0]}" "$NAMESPACE"
-        patch_project_status "${ARGS[0]}"
-        ;;
-    add-shoot)
-        [ ${#ARGS[@]} -lt 2 ] && { echo "usage: add-shoot <shoot> <project>" >&2; exit 1; }
-        ns="garden-${ARGS[1]}"
-        echo -e "${YELLOW}Adding shoot '${ARGS[0]}' to project '${ARGS[1]}'...${NC}"
-        create_shoot "${ARGS[0]}" "$ns"
-        ;;
-    add-projects)
-        [ ${#ARGS[@]} -lt 1 ] && { echo "usage: add-projects <count>" >&2; exit 1; }
-        bulk_projects "${ARGS[0]}"
-        ;;
-    add-shoots)
-        [ ${#ARGS[@]} -lt 2 ] && { echo "usage: add-shoots <project> <count>" >&2; exit 1; }
-        bulk_shoots "${ARGS[0]}" "${ARGS[1]}"
-        ;;
-    cluster-resources)
-        apply_cluster_resources
-        ;;
-    get-token)
-        kubectl -n garden create token dashboard-user --duration 24h
-        ;;
-    reset-kcp)        rm -rf "$KCP_DIR/.kcp" ;;
-    reset-kcp-certs)  rm -f "$KCP_DIR/.kcp"/*.crt "$KCP_DIR/.kcp"/*.key ;;
-    *) echo -e "${RED}Unknown command${NC}"; show_help ;;
+  setup-kcp)
+    setup_kcp
+    ;;
+
+  start-kcp)
+    start_kcp_server
+    ;;
+
+  reset-kcp)        
+    rm -rf "$KCP_DIR/.kcp"
+    ;;
+
+  reset-kcp-certs)
+    rm -f "$KCP_DIR/.kcp"/*.crt "$KCP_DIR/.kcp"/*.key
+    ;;
+
+  setup-gardener-crds)
+    setup_gardener_crds
+    ;;
+
+  cluster-resources)
+    apply_cluster_resources
+    ;;
+
+  get-token)
+    kubectl -n garden create token dashboard-user --duration 24h
+    ;;
+
+  dashboard-kubeconfigs)
+    log_info "kcp-mode dashboard kubeconfig : $dashboard_kcp_cfg"
+    log_info "single-workspace dashboard   : $dashboard_single_cfg"
+    ;;
+
+  create-demo-workspaces)
+    create_demo_ws demo-animals
+    create_demo_ws demo-plants
+    create_demo_ws demo-cars
+    create_kubeconfig "$dashboard_kcp_cfg" base
+    log_info "${GREEN}dashboard-kcp kubeconfig:${NC} $dashboard_kcp_cfg"
+    ;;
+
+  create-single-demo-workspace)
+    create_demo_ws demo
+    create_kubeconfig "$dashboard_single_cfg" demo
+    log_info "${GREEN}dashboard kubeconfig:${NC} $dashboard_single_cfg"
+    ;;
+
+  add-project)
+    NAME=""; NAMESPACE=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --workspace|-ws) shift 2;;           # allow global anywhere
+        --name|-n)      NAME="$2"; shift 2;;
+        --namespace|-N) NAMESPACE="$2"; shift 2;;
+        -h|--help)      show_help;;
+        *) log_error "Unknown option: $1"; exit 1;;
+      esac
+    done
+    [[ -z "$NAME" ]] && { log_error "Missing --name"; exit 1; }
+    NAMESPACE="garden-${NAMESPACE:-$NAME}"
+    run_silent kubectl get ns "$NAMESPACE" || kubectl create ns "$NAMESPACE"
+    create_project_resource "$NAME" "$NAMESPACE"
+    patch_project_status "$NAME"
+    ;;
+
+  add-shoot)
+    SHOOT=""; PROJECT=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --workspace|-ws) shift 2;;           # allow global anywhere
+        --shoot|-s)    SHOOT="$2";    shift 2;;
+        --project|-p)  PROJECT="$2";  shift 2;;
+        -h|--help)     show_help;;
+        *) log_error "Unknown option: $1"; exit 1;;
+      esac
+    done
+    [[ -z "$SHOOT" || -z "$PROJECT" ]] && { log_error "Missing --shoot or --project"; exit 1; }
+    ns="garden-${PROJECT}"
+    log_info "${YELLOW}Adding shoot '$SHOOT' to project '$PROJECT'...${NC}"
+    create_shoot "$SHOOT" "$ns"
+    ;;
+
+  add-projects)
+    COUNT=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --workspace|-ws) shift 2;;
+        --count|-c)      COUNT="$2"; shift 2;;
+        -h|--help)       show_help;;
+        *) log_error "Unknown option: $1"; exit 1;;
+      esac
+    done
+    [[ -z "$COUNT" ]] && { log_error "Missing --count"; exit 1; }
+    bulk_projects "$COUNT"
+    ;;
+
+  add-shoots)
+    PROJECT=""; COUNT=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --workspace|-ws) shift 2;;
+        --project|-p)    PROJECT="$2"; shift 2;;
+        --count|-c)      COUNT="$2";   shift 2;;
+        -h|--help)       show_help;;
+        *) log_error "Unknown option: $1"; exit 1;;
+      esac
+    done
+    [[ -z "$PROJECT" || -z "$COUNT" ]] && { log_error "Missing --project or --count"; exit 1; }
+    bulk_shoots "$PROJECT" "$COUNT"
+    ;;
+
+  toggle-shoot-status)
+    SHOOT=""; PROJECT=""; MODE=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --workspace|-ws) shift 2;;
+        --shoot|-s)      SHOOT="$2";    shift 2;;
+        --project|-p)    PROJECT="$2";  shift 2;;
+        --mode|-m)       MODE="$2";     shift 2;;
+        -h|--help)       show_help;;
+        *) log_error "Unknown option: $1"; exit 1;;
+      esac
+    done
+    [[ -z "$SHOOT" || -z "$PROJECT" || -z "$MODE" ]] && { log_error "Missing --shoot, --project or --mode"; exit 1; }
+    toggle_shoot_status "$SHOOT" "$PROJECT" "$MODE"
+    ;;
+
+  random-update-shoots)
+    PROJECT=""; INTERVAL=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --workspace|-ws) shift 2;;
+        --project|-p)    PROJECT="$2";    shift 2;;
+        --interval|-i)   INTERVAL="$2";  shift 2;;
+        -h|--help)       show_help;;
+        *) log_error "Unknown option: $1"; exit 1;;
+      esac
+    done
+    [[ -z "$INTERVAL" ]] && { log_error "Missing --interval"; exit 1; }
+    if [[ -n "$PROJECT" ]]; then
+      random_update_shoots "$PROJECT" "$INTERVAL"
+    else
+      random_update_shoots "$INTERVAL"
+    fi
+    ;;
+
+  simulate-shoot-op)
+    SHOOT=""; PROJECT=""; INTERVAL=""; STEP=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --workspace|-ws)  shift 2;;
+        --shoot|-s)       SHOOT="$2";     shift 2;;
+        --project|-p)     PROJECT="$2";   shift 2;;
+        --interval|-i)    INTERVAL="$2";  shift 2;;
+        --step|-t)        STEP="$2";      shift 2;;
+        -h|--help)        show_help;;
+        *) log_error "Unknown option: $1"; exit 1;;
+      esac
+    done
+    [[ -z "$SHOOT" || -z "$PROJECT" || -z "$INTERVAL" ]] && { log_error "Missing --shoot, --project or --interval"; exit 1; }
+    simulate_shoot_operation "$SHOOT" "$PROJECT" "$INTERVAL" "${STEP:-10}"
+    ;;
+
+  *)
+    log_error "${RED}Unknown command: $COMMAND${NC}"
+    show_help
+    ;;
 esac

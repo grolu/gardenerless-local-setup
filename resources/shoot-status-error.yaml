@@ -2,14 +2,14 @@ status:
   conditions:
     - type: APIServerAvailable
       status: 'False'
-      lastTransitionTime: '2025-05-06T08:44:50Z'
-      lastUpdateTime: '2025-05-06T08:44:50Z'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
       reason: APIServerDown
       message: Could not reach API server during client initialization.
     - type: ControlPlaneHealthy
       status: 'False'
-      lastTransitionTime: '2025-05-06T08:44:50Z'
-      lastUpdateTime: '2025-05-06T08:44:50Z'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
       reason: DeploymentMissing
       message: >-
         Missing required deployments: [cluster-autoscaler
@@ -18,20 +18,20 @@ status:
         vpa-recommender vpa-updater]
     - type: ObservabilityComponentsHealthy
       status: 'False'
-      lastTransitionTime: '2025-05-06T08:44:50Z'
-      lastUpdateTime: '2025-05-06T08:44:50Z'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
       reason: DeploymentMissing
       message: 'Missing required deployments: [kube-state-metrics]'
     - type: EveryNodeReady
       status: Unknown
       lastTransitionTime: '2025-03-07T20:19:27Z'
-      lastUpdateTime: '2025-05-06T08:44:50Z'
+      lastUpdateTime: 'DATEPLACEHOLDER'
       reason: ConditionCheckError
       message: Shoot control plane is not running at the moment.
     - type: SystemComponentsHealthy
       status: Unknown
       lastTransitionTime: '2025-03-07T20:19:27Z'
-      lastUpdateTime: '2025-05-06T08:44:50Z'
+      lastUpdateTime: 'DATEPLACEHOLDER'
       reason: ConditionCheckError
       message: Shoot control plane is not running at the moment.
   constraints:
@@ -43,14 +43,14 @@ status:
       message: The API server proxy was reconfigured to use the HTTP proxy method.
     - type: HibernationPossible
       status: 'False'
-      lastTransitionTime: '2025-05-06T08:44:50Z'
-      lastUpdateTime: '2025-05-06T08:44:50Z'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
       reason: ConstraintNotChecked
       message: Shoot control plane is not running at the moment.
     - type: MaintenancePreconditionsSatisfied
       status: 'False'
-      lastTransitionTime: '2025-05-06T08:44:50Z'
-      lastUpdateTime: '2025-05-06T08:44:50Z'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
       reason: ConstraintNotChecked
       message: Shoot control plane is not running at the moment.
   gardener:
@@ -60,5 +60,11 @@ status:
   hibernated: false
   technicalID: shoot--NAMESPACEPLACEHOLDER--NAMEPLACEHOLDER
   uid: 123456781234-NAMESPACEPLACEHOLDER-NAMEPLACEHOLDER
+  lastOperation:
+    description: Error occurred during shoot reconciliation.
+    lastUpdateTime: 'DATEPLACEHOLDER'
+    progress: 100
+    state: Error
+    type: Reconcile
 
 

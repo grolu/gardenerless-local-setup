@@ -2,8 +2,8 @@ status:
   conditions:
     - type: APIServerAvailable
       status: 'True'
-      lastTransitionTime: '2025-05-08T02:35:06Z'
-      lastUpdateTime: '2025-05-08T02:35:06Z'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
       reason: HealthzRequestSucceeded
       message: API server /healthz endpoint responded with success status code.
     - type: ControlPlaneHealthy
@@ -20,14 +20,14 @@ status:
       message: All observability components are healthy.
     - type: EveryNodeReady
       status: 'True'
-      lastTransitionTime: '2025-05-08T02:35:06Z'
-      lastUpdateTime: '2025-05-08T02:35:06Z'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
       reason: EveryNodeReady
       message: All nodes are ready.
     - type: SystemComponentsHealthy
       status: 'True'
-      lastTransitionTime: '2025-05-08T02:35:06Z'
-      lastUpdateTime: '2025-05-08T02:35:06Z'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
       reason: SystemComponentsRunning
       message: All system components are healthy.
   constraints:
@@ -39,14 +39,14 @@ status:
       message: The API server proxy was reconfigured to use the HTTP proxy method.
     - type: HibernationPossible
       status: 'True'
-      lastTransitionTime: '2025-05-08T02:35:06Z'
-      lastUpdateTime: '2025-05-08T02:35:06Z'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
       reason: NoProblematicWebhooks
       message: All webhooks are properly configured.
     - type: MaintenancePreconditionsSatisfied
       status: 'True'
-      lastTransitionTime: '2025-05-08T02:35:06Z'
-      lastUpdateTime: '2025-05-08T02:35:06Z'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
       reason: NoProblematicWebhooks
       message: All webhooks are properly configured.
   gardener:
@@ -56,4 +56,9 @@ status:
   hibernated: false
   technicalID: shoot--NAMESPACEPLACEHOLDER--NAMEPLACEHOLDER
   uid: 123456781234-NAMESPACEPLACEHOLDER-NAMEPLACEHOLDER
-
+  lastOperation:
+    description: Shoot cluster has been successfully reconciled.
+    lastUpdateTime: 'DATEPLACEHOLDER'
+    progress: 100
+    state: Succeeded
+    type: Reconcile
