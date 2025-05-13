@@ -18,7 +18,7 @@ now()       { date -u +%Y-%m-%dT%H:%M:%SZ;    }
 RES_DIR="${SCRIPT_DIR}/resources"
 KCP_DIR="${SCRIPT_DIR}/kcp"
 KCP_REPO="https://github.com/kcp-dev/kcp.git"
-ORIG_KUBECONFIG="${KCP_DIR}/.kcp/admin.kubeconfig"
+KCP_KUBECONFIG="${KCP_DIR}/.kcp/admin.kubeconfig"
 dashboard_kcp_cfg="${KCP_DIR}/.kcp/dashboard-kcp.kubeconfig"
 dashboard_single_cfg="${KCP_DIR}/.kcp/dashboard.kubeconfig"
 
@@ -26,11 +26,8 @@ dashboard_single_cfg="${KCP_DIR}/.kcp/dashboard.kubeconfig"
 run_quiet()  { "$@" >/dev/null; }
 run_silent() { "$@" >/dev/null 2>&1; }
 
-init_temp_kubeconfig() {
-  TMP_KUBECONFIG=$(mktemp)
-  cp "$ORIG_KUBECONFIG" "$TMP_KUBECONFIG"
-  export KUBECONFIG="$TMP_KUBECONFIG"
-  trap "rm -f $TMP_KUBECONFIG" EXIT
+init_kubeconfig() {
+  KUBECONFIG="${KCP_KUBECONFIG}"
 }
 
 switch_to_root() {
@@ -46,7 +43,7 @@ apply_yaml_template() {
 create_kubeconfig() {
   local dest="$1" ws="$2"
   log_info "${YELLOW}Creating kubeconfig for workspace '$ws'...${NC}"
-  cp "$TMP_KUBECONFIG" "$dest"
+  cp "$KCP_KUBECONFIG" "$dest"
   run_quiet env KUBECONFIG="$dest" kubectl config use-context root
   run_quiet env KUBECONFIG="$dest" kubectl ws :root
   if [[ "$ws" != "base" ]]; then
@@ -475,7 +472,7 @@ COMMAND="$1"; shift
 
 # 3) Init kubeconfig & apply global workspace
 if [[ "$COMMAND" != "setup-kcp" && "$COMMAND" != "start-kcp" ]]; then
-  init_temp_kubeconfig
+  init_kubeconfig
   if [[ -n "$WORKSPACE_PARAM" ]]; then
     IFS=':' read -ra parts <<<"$WORKSPACE_PARAM"
     [[ "${parts[0]}" != "root" ]] && parts=(root "${parts[@]}")
