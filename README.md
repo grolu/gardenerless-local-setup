@@ -1,4 +1,4 @@
-Local kcp Management Script for Gardener Dashboard (gardenerless-setup.sh)
+Local kcp Management Script for Gardener Dashboard (`gardenerless-setup.sh`)
 
 ## Introduction
 
@@ -10,192 +10,177 @@ This repository provides a Bash script (`gardenerless-setup.sh`) to simplify the
 
 ## Features
 
-* **Dedicated kcp Repository Management**
-  Clones or updates the `kcp` repository under `./kcp`, builds the binary, and ensures it’s up to date.
+* **kcp Repository Management**
+  Clones or updates `github.com/kcp-dev/kcp` under `./kcp`, builds the binary, and keeps it current.
 
-* **Automatic kubeconfig Handling**
-  Creates a temporary kubeconfig based on `kcp/.kcp/admin.kubeconfig` and switches contexts/workspaces as needed.
+* **Dynamic KUBECONFIG Handling**
+  Generates temporary kubeconfigs based on `kcp/.kcp/admin.kubeconfig` and transparently switches contexts and workspaces.
 
-* **Workspace and Context Switching**
-  Switches to the `root` context and navigates into any specified workspace (or nested workspaces).
+* **Workspace & Context Navigation**
+  `--workspace <path>` lets you enter any top-level or nested workspace under `root:`.
 
-* **Local CRD and Resource Application**
-  Applies Gardener CRDs and essential cluster resources (`cloudprofile` and `seed` YAMLs) from the `resources/` directory—no external cloning needed.
+* **Local CRD & Resource Bootstrap**
+  Applies Gardener CRDs and seed/cloudprofile YAMLs from `resources/`—no external downloads.
 
-* **Project and Shoot Management**
+* **Project & Shoot Commands**
 
-  * `add-project`, `add-projects`: Create single or bulk projects (with status patched to **Ready**).
-  * `add-shoot`, `add-shoots`: Add single or bulk shoots under a project (with **Ready** or **Error** status based on naming).
+  * `add-project` / `add-projects`
+  * `add-shoot`   / `add-shoots`
+    Projects and shoots can be created individually or in bulk, with status automatically set to **Ready** or **Error** based on naming.
 
-* **Demo Environment Setup**
+* **Demo Environments**
 
-  * `create-demo-workspaces`: Builds `demo-animals`, `demo-plants`, and `demo-cars` workspaces with projects, shoots, and AWS secrets.
-  * `create-single-demo-workspace`: Builds a single `demo` workspace for quick testing.
+  * `create-demo-workspaces` (animals, plants, cars)
+  * `create-single-demo-workspace`
+    All CRDs, AWS secrets, and sample shoots/projects are preconfigured.
 
-* **Token Retrieval**
-  Creates or updates the `dashboard-user` service account in the `garden` namespace and retrieves a 24-hour token.
+* **Token Management**
+  `get-token` creates/refreshes a 24h dashboard-user token in the `garden` namespace.
 
-* **Reset Options**
+* **Reset Utilities**
 
-  * `reset-kcp`: Clears local kcp state.
-  * `reset-kcp-certs`: Removes certificate and key files for clean reconnection.
+  * `reset-kcp`        clears all local state
+  * `reset-kcp-certs`  removes certs/keys
 
-* **Built‑in macOS Network Alias**
-  Automatically configures `lo0` alias (`192.168.65.1/24`) on macOS if not already present.
+* **macOS Compatibility**
+  Automatically configures the `lo0` alias (`192.168.65.1/24`) if needed.
 
 ---
 
 ## Prerequisites
 
 * **Git**
-* **Go toolchain** (for building kcp)
+* **Go** (for building kcp)
 * **kubectl**
-* **YQ** (CLI YAML processor)
+* **yq** (CLI YAML processor)
 
 ---
 
-## Setup & Installation
+## Quickstart
 
-1. **Clone this repository**
+1. **Clone & enter repo**
 
    ```bash
-   git clone <repository-url>
-   cd <repository-directory>
+   git clone <repo-url>
+   cd <repo-dir>
    ```
-2. **Ensure prerequisites are installed** (Git, Go, kubectl, yq).
-3. **Initial kcp Installation**
-   Download, build, and install kcp:
+
+2. **Build kcp**
 
    ```bash
    ./gardenerless-setup.sh setup-kcp
    ```
-4. **Start kcp Server**
-   After building, start the kcp server:
+
+3. **Start kcp server**
 
    ```bash
    ./gardenerless-setup.sh start-kcp
    ```
 
-   This will also configure the macOS network alias automatically.
-5. **Reset kcp State**
-   To clear the local kcp database and state at any time, run:
+   > macOS users: loopback alias is added automatically.
+
+4. **(Optional) Reset state**
 
    ```bash
    ./gardenerless-setup.sh reset-kcp
    ```
-6. **Demo Workspace for Standard Dashboard**
-   For a quick start with the standard Gardener Dashboard (without kcp mode), create a single demo workspace:
+
+5. **Create a single demo workspace**
 
    ```bash
    ./gardenerless-setup.sh create-single-demo-workspace
    ```
 
-   A ready-to-use kubeconfig is generated at `kcp/.kcp/dashboard.kubeconfig`.
-7. **Demo Workspaces for kcp Dashboard Mode**
-   To test the Gardener Dashboard’s experimental kcp integration (feature branch required), use:
+   → Kubeconfig: `kcp/.kcp/dashboard.kubeconfig`
+
+6. **Create full demo suite for kcp mode**
 
    ```bash
    ./gardenerless-setup.sh create-demo-workspaces
    ```
 
-   This creates multiple demo workspaces (`demo-animals`, `demo-plants`, `demo-cars`) with CRDs and demo resources preconfigured. The kubeconfig targeting the base context is generated at `kcp/.kcp/dashboard-kcp.kubeconfig`, allowing the dashboard to work directly in kcp mode.
+   → Kubeconfig: `kcp/.kcp/dashboard-kcp.kubeconfig`
 
 ---
 
 ## Usage
 
-Run the script with optional `--workspace <ws>` (workspace path under `root`) and a command:
-
 ```bash
-./gardenerless-setup.sh --workspace <workspace> <command> [args]
+./gardenerless-setup.sh [--workspace <ws>] <command> [options]
 ```
 
-### Global Option
+* **Global flag**
+  `--workspace <ws>`
+  Enter any workspace path under `root` (e.g. `foo`, or nested `root:foo:bar`).
 
-* `--workspace <ws>`
-  Specify the workspace (e.g., `foo` or `root:foo:bar`). Automatically prepended with `root` if missing.
+### Commands & Options
 
-### Commands
-
-| Command                        | Description                                                      |
-| ------------------------------ | ---------------------------------------------------------------- |
-| `setup-kcp`                    | Clone/update and build the kcp binary.                           |
-| `start-kcp`                    | Start the kcp server (foreground, with built‑in macOS alias).    |
-| `reset-kcp`                    | Delete all state under `kcp/.kcp/`.                              |
-| `reset-kcp-certs`              | Remove certificates and keys under `kcp/.kcp/`.                  |
-| `setup-gardener-crds`          | Apply Gardener CRDs from `resources/crds/`.                      |
-| `cluster-resources`            | Apply `cloudprofile-*.yaml` and `seed-*.yaml` from `resources/`. |
-| `get-token`                    | Create/refresh `dashboard-user` token for 24 hours.              |
-| `add-project <name>`           | Create a project (namespace `garden-<name>`) and mark **Ready**. |
-| `add-projects <count>`         | Bulk-create `<count>` projects (random UIDs).                    |
-| `add-shoot <shoot> <project>`  | Add a shoot to project (Ready or Error based on suffix).         |
-| `add-shoots <project> <count>` | Bulk-create `<count>` shoots under a project.                    |
-| `create-demo-workspaces`       | Build `demo-animals`, `demo-plants`, `demo-cars` with demos.     |
-| `create-single-demo-workspace` | Build a single `demo` workspace with demos.                      |
-| `dashboard-kubeconfigs`        | Print paths for generated dashboard kubeconfigs.                 |
+| Command                          | Options                                                                      | Description                                                   |                                           |
+| -------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------- |
+| **setup-kcp**                    | —                                                                            | Clone & build the kcp binary                                  |                                           |
+| **start-kcp**                    | —                                                                            | Start the kcp server (foreground, macOS alias)                |                                           |
+| **reset-kcp**                    | —                                                                            | Delete all `kcp/.kcp` state                                   |                                           |
+| **reset-kcp-certs**              | —                                                                            | Remove certs/keys in `kcp/.kcp`                               |                                           |
+| **setup-gardener-crds**          | —                                                                            | Apply CRDs from `resources/crds/`                             |                                           |
+| **cluster-resources**            | —                                                                            | Apply `cloudprofile-*.yaml` & `seed-*.yaml` from `resources/` |                                           |
+| **get-token**                    | —                                                                            | Create/refresh 24h token for `dashboard-user` SA              |                                           |
+| **dashboard-kubeconfigs**        | —                                                                            | Print paths of generated dashboard kubeconfigs                |                                           |
+| **add-project**                  | `--name <name>`<br>`[--namespace <ns>]`                                      | Create one project (status=Ready)                             |                                           |
+| **add-projects**                 | `--count <n>`                                                                | Bulk-create *n* projects (random UIDs, status=Ready)          |                                           |
+| **add-shoot**                    | `--shoot <name>`<br>`--project <proj>`                                       | Create one shoot; suffix `-error` ⇒ Error state               |                                           |
+| **add-shoots**                   | `--project <proj>`<br>`--count <n>`                                          | Bulk-create *n* shoots (healthy by default)                   |                                           |
+| **toggle-shoot-status**          | `--shoot <name>`<br>`--project <proj>`<br>\`--mode \<ready                   | error>\`                                                      | Flip a shoot’s status between Ready/Error |
+| **random-update-shoots**         | `[--project <proj>]`<br>`--interval <seconds>`                               | Periodically toggle one shoot every *interval* seconds        |                                           |
+| **simulate-shoot-op**            | `--shoot <name>`<br>`--project <proj>`<br>`--interval <s>`<br>`[--step <%>]` | Simulate progress 0→100% on a shoot                           |                                           |
+| **create-demo-workspaces**       | —                                                                            | Build `demo-animals`, `demo-plants`, `demo-cars` with samples |                                           |
+| **create-single-demo-workspace** | —                                                                            | Build one `demo` workspace with samples                       |                                           |
 
 ---
 
-## Command Examples
+## Examples
 
-* **Clone & Build kcp**:
+```bash
+# Build kcp
+./gardenerless-setup.sh setup-kcp
 
-  ```bash
-  ./gardenerless-setup.sh setup-kcp
-  ```
+# Start server
+./gardenerless-setup.sh start-kcp
 
-* **Start kcp Server**:
+# Apply CRDs & resources in demo-animals
+./gardenerless-setup.sh --workspace demo-animals setup-gardener-crds
+./gardenerless-setup.sh --workspace demo-animals cluster-resources
 
-  ```bash
-  ./gardenerless-setup.sh start-kcp
-  ```
+# Create one project named "foo"
+./gardenerless-setup.sh add-project --name foo
 
-* **Apply CRDs & Resources**:
+# Bulk-create 5 projects
+./gardenerless-setup.sh add-projects --count 5
 
-  ```bash
-  ./gardenerless-setup.sh --workspace demo-animals setup-gardener-crds
-  ./gardenerless-setup.sh --workspace demo-animals cluster-resources
-  ```
+# Add a shoot "bar" to project "foo"
+./gardenerless-setup.sh add-shoot --shoot bar --project foo
 
-* **Create a Project**:
-
-  ```bash
-  ./gardenerless-setup.sh add-project myproject
-  ```
-
-* **Bulk Projects & Shoots**:
-
-  ```bash
-  ./gardenerless-setup.sh add-projects 5
-  ./gardenerless-setup.sh add-shoots myproject 10
-  ```
+# Bulk-create 10 shoots in "foo"
+./gardenerless-setup.sh add-shoots --project foo --count 10
+```
 
 ---
 
 ## Troubleshooting
 
-* **Missing kcp binary**
-  If commands other than `setup-kcp` or `start-kcp` fail, run:
+* **kcp binary missing?**
+  Run `./gardenerless-setup.sh setup-kcp`.
 
-  ```bash
-  ./gardenerless-setup.sh setup-kcp
-  ```
+* **Server not running?**
+  Run `./gardenerless-setup.sh start-kcp`.
 
-* **No kcp server detected**
-  Ensure kcp is running:
+* **Missing admin kubeconfig?**
+  Verify `kcp/.kcp/admin.kubeconfig` exists.
 
-  ```bash
-  ./gardenerless-setup.sh start-kcp
-  ```
+* **Permission issues?**
+  Check Git, Go, and `kubectl` credentials and access.
 
-* **Admin kubeconfig not found**
-  Verify `kcp/.kcp/admin.kubeconfig` exists and is accessible.
-
-* **Permission Errors**
-  Check your Git, Go, and `kubectl` access rights.
-
-If issues persist, inspect script logs and ensure your environment meets all prerequisites.
+If problems persist, inspect script logs and ensure all prerequisites are met.
 
 ---
 
-Happy clustering and dashboarding!
+Happy clustering!
