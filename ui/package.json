@@ -1,0 +1,22 @@
+{
+  "name": "kcp-gardener-ui",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"nodemon server.js\" \"vite\"",
+    "build": "vite build",
+    "serve": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "vue": "^3.3.4",
+    "vuetify": "^3.3.7",
+    "yaml": "^2.3.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.5.0",
+    "concurrently": "^8.2.0",
+    "nodemon": "^3.0.2",
+    "vite": "^4.4.9"
+  }
+}
