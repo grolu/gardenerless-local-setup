@@ -49,3 +49,4 @@ spec:
   purpose: evaluation
   region: europe-central-1
   secretBindingName: aws-secret
+  seedName: aws-seed

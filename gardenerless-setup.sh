@@ -143,17 +143,17 @@ start_kcp_server() {
 
 get_shoots() {
   case "$1:$2" in
-    demo-animals:cat)        echo "cat-alpha cat-error"      ;;
-    demo-animals:dog)        echo "dog-alpha dog-error"      ;;
-    demo-plants:pine)        echo "pine-oak pine-error"      ;;
-    demo-plants:rose)        echo "rose-blossom rose-error"  ;;
-    demo-plants:sunflower)   echo "sunflower-sunny sunflower-error" ;;
-    demo-cars:bmw)           echo "bmw-m3 bmw-x5 bmw-error"  ;;
-    demo-cars:mercedes)      echo "merc-c300 merc-e350 merc-error" ;;
-    demo-cars:tesla)         echo "tesla-model3 tesla-models tesla-error" ;;
-    demo:pine)               echo "pine-oak pine-error"      ;;
-    demo:rose)               echo "rose-blossom rose-error"  ;;
-    demo:sunflower)          echo "sunflower-sunny sunflower-error" ;;
+    demo-animals:cat)        echo "cat-alpha cat"      ;;
+    demo-animals:dog)        echo "dog-alpha dog"      ;;
+    demo-plants:pine)        echo "pine-oak pine"      ;;
+    demo-plants:rose)        echo "rose-blossom rose"  ;;
+    demo-plants:sunflower)   echo "sunflower-sunny sunflower" ;;
+    demo-cars:bmw)           echo "bmw-m3 bmw-x5 bmw"  ;;
+    demo-cars:mercedes)      echo "merc-c300 merc-e350 merc" ;;
+    demo-cars:tesla)         echo "tesla-model3 tesla-models tesla" ;;
+    demo:pine)               echo "pine-oak pine"      ;;
+    demo:rose)               echo "rose-blossom rose"  ;;
+    demo:sunflower)          echo "sunflower-sunny sunflower" ;;
   esac
 }
 
