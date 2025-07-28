@@ -26,7 +26,7 @@ This repository provides a Bash script (`gardenerless-setup.sh`) to simplify the
 
   * `add-project` / `add-projects`
   * `add-shoot`   / `add-shoots`
-    Projects and shoots can be created individually or in bulk, with status automatically set to **Ready** or **Error** based on naming.
+    Projects and shoots can be created individually or in bulk, with status automatically set to **Ready**.
 
 * **Demo Environments**
 
@@ -127,11 +127,8 @@ This repository provides a Bash script (`gardenerless-setup.sh`) to simplify the
 | **dashboard-kubeconfigs**        | —                                                                            | Print paths of generated dashboard kubeconfigs                |                                           |
 | **add-project**                  | `--name <name>`<br>`[--namespace <ns>]`                                      | Create one project (status=Ready)                             |                                           |
 | **add-projects**                 | `--count <n>`                                                                | Bulk-create *n* projects (random UIDs, status=Ready)          |                                           |
-| **add-shoot**                    | `--shoot <name>`<br>`--project <proj>`                                       | Create one shoot; suffix `-error` ⇒ Error state               |                                           |
+| **add-shoot**                    | `--shoot <name>`<br>`--project <proj>`                                       | Create one shoot               |                                           |
 | **add-shoots**                   | `--project <proj>`<br>`--count <n>`                                          | Bulk-create *n* shoots (healthy by default)                   |                                           |
-| **toggle-shoot-status**          | `--shoot <name>`<br>`--project <proj>`<br>\`--mode \<ready                   | error>\`                                                      | Flip a shoot’s status between Ready/Error |
-| **random-update-shoots**         | `[--project <proj>]`<br>`--interval <seconds>`                               | Periodically toggle one shoot every *interval* seconds        |                                           |
-| **simulate-shoot-op**            | `--shoot <name>`<br>`--project <proj>`<br>`--interval <s>`<br>`[--step <%>]` | Simulate progress 0→100% on a shoot                           |                                           |
 | **create-demo-workspaces**       | —                                                                            | Build `demo-animals`, `demo-plants`, `demo-cars` with samples |                                           |
 | **create-single-demo-workspace** | —                                                                            | Build one `demo` workspace with samples                       |                                           |
 

@@ -68,6 +68,10 @@ apply_cluster_resources() {
   log_info "${YELLOW}Applying cluster resources...${NC}"
   run_quiet kubectl apply -f "$RES_DIR/cloudprofile-*.yaml"
   run_quiet kubectl apply -f "$RES_DIR/seed-*.yaml"
+  for f in "$RES_DIR"/seed-*.yaml; do
+    name=$(yq e '.metadata.name' "$f")
+    patch_seed_status "$name"
+  done
 }
 
 create_project_resource() {
@@ -80,6 +84,28 @@ patch_project_status() {
   log_info "${YELLOW}Marking project '$1' as Ready...${NC}"
   run_quiet kubectl patch project "$1" \
     --type=merge --subresource=status -p '{"status":{"phase":"Ready"}}'
+}
+
+patch_shoot_ready() {
+  local shoot="$1" ns="$2"
+  local project="${ns#garden-}"
+  local now="$(now)"
+  local patch_yaml
+  patch_yaml=$(apply_yaml_template "${RES_DIR}/shoot-status-ready.yaml" "$shoot" "$ns" | sed -E "s/DATEPLACEHOLDER/${now}/g")
+  local json_patch
+  json_patch=$(echo "$patch_yaml" | yq -o=json)
+  run_quiet kubectl patch shoot "$shoot" -n "$ns" --type=merge --subresource=status -p "$json_patch"
+  run_quiet kubectl label shoot "$shoot" -n "$ns" shoot.gardener.cloud/status="healthy" --overwrite
+}
+
+patch_seed_status() {
+  local seed="$1"
+  local now="$(now)"
+  local patch_yaml
+  patch_yaml=$(sed -e "s/DATEPLACEHOLDER/${now}/g" "$RES_DIR/seed-status.yaml")
+  local json_patch
+  json_patch=$(echo "$patch_yaml" | yq -o=json)
+  run_quiet kubectl patch seed "$seed" --type=merge --subresource=status -p "$json_patch"
 }
 
 setup_kcp() {
@@ -117,189 +143,33 @@ start_kcp_server() {
 
 get_shoots() {
   case "$1:$2" in
-    demo-animals:cat)        echo "cat-alpha cat-error"      ;;
-    demo-animals:dog)        echo "dog-alpha dog-error"      ;;
-    demo-plants:pine)        echo "pine-oak pine-error"      ;;
-    demo-plants:rose)        echo "rose-blossom rose-error"  ;;
-    demo-plants:sunflower)   echo "sunflower-sunny sunflower-error" ;;
-    demo-cars:bmw)           echo "bmw-m3 bmw-x5 bmw-error"  ;;
-    demo-cars:mercedes)      echo "merc-c300 merc-e350 merc-error" ;;
-    demo-cars:tesla)         echo "tesla-model3 tesla-models tesla-error" ;;
-    demo:pine)               echo "pine-oak pine-error"      ;;
-    demo:rose)               echo "rose-blossom rose-error"  ;;
-    demo:sunflower)          echo "sunflower-sunny sunflower-error" ;;
+    demo-animals:cat)        echo "cat-alpha cat"      ;;
+    demo-animals:dog)        echo "dog-alpha dog"      ;;
+    demo-plants:pine)        echo "pine-oak pine"      ;;
+    demo-plants:rose)        echo "rose-blossom rose"  ;;
+    demo-plants:sunflower)   echo "sunflower-sunny sunflower" ;;
+    demo-cars:bmw)           echo "bmw-m3 bmw-x5 bmw"  ;;
+    demo-cars:mercedes)      echo "merc-c300 merc-e350 merc" ;;
+    demo-cars:tesla)         echo "tesla-model3 tesla-models tesla" ;;
+    demo:pine)               echo "pine-oak pine"      ;;
+    demo:rose)               echo "rose-blossom rose"  ;;
+    demo:sunflower)          echo "sunflower-sunny sunflower" ;;
   esac
 }
 
 # toggles a single shoot between ready and error
-toggle_shoot_status() {
-  local shoot="$1" project="$2" mode="$3"
-  if [[ -z "$shoot" || -z "$project" || ( "$mode" != "error" && "$mode" != "ready" ) ]]; then
-    log_error "Usage: set-shoot-status --shoot <shoot> --project ≤project> <error|ready>"
-    exit 1
-  fi
-
-  local labelValue
-  if [[ "$mode" == "error" ]]; then
-    labelValue="unhealthy"
-  else
-    labelValue="healthy"
-  fi
-
-  local ns="garden-${project}"
-  if ! run_silent kubectl get ns "$ns"; then
-    log_error "Error: namespace '$ns' not found"
-    exit 1
-  fi
-
-  local tpl="$RES_DIR/shoot-status-${mode}.yaml"
-  if [[ ! -f "$tpl" ]]; then
-    log_error "Error: template '$tpl' not found"
-    exit 1
-  fi
-
-  local now
-  now="$(now)"
-
-  local patch_yaml
-  patch_yaml=$(
-    apply_yaml_template "$tpl" "$shoot" "$ns" \
-      | sed -E "s/DATEPLACEHOLDER/${now}/g"
-  )
-
-  local json_patch
-  json_patch=$(echo "$patch_yaml" | yq -o=json)
-
-  run_quiet kubectl patch shoot "$shoot" -n "$ns" \
-    --type=merge --subresource=status -p "$json_patch"
-  run_quiet kubectl label shoot "$shoot" -n "$ns" \
-    shoot.gardener.cloud/status="${labelValue}" --overwrite
-}
 
 # every $interval seconds, pick a random shoot (optionally per project) and flip it
-random_update_shoots() {
-  local project interval ns resource="shoots.core.gardener.cloud"
-  local shoots pairs pair shoot proj curState target
-
-  if [[ $# -eq 1 ]]; then
-    project=""; interval="$1"
-  elif [[ $# -eq 2 ]]; then
-    project="$1"; interval="$2"
-  else
-    log_error "Usage: random-update-shoots [--project project] --interval <seconds>"
-    exit 1
-  fi
-
-  if [[ -n "$project" ]]; then
-    ns="garden-${project}"
-    if ! run_silent kubectl get ns "$ns"; then
-      log_error "Error: namespace '$ns' not found"
-      exit 1
-    fi
-    log_info "${YELLOW}Toggling shoots in '$ns' every ${interval}s${NC}"
-  else
-    log_info "${YELLOW}Toggling shoots across all garden-* namespaces every ${interval}s${NC}"
-  fi
-
-  while true; do
-    sleep "$interval"
-
-    if [[ -n "$project" ]]; then
-      read -r -a shoots < <(
-        kubectl get "$resource" -n "$ns" \
-          -o jsonpath='{range .items[*]}{.metadata.name}{" "}{end}'
-      )
-      (( ${#shoots[@]} )) || { log_info "⚠ no shoots in namespace $ns"; continue; }
-      shoot="${shoots[RANDOM % ${#shoots[@]}]}"
-    else
-      read -r -a pairs < <(
-        kubectl get "$resource" -A \
-          -o jsonpath='{range .items[*]}{.metadata.namespace}:{.metadata.name}{"\n"}{end}' \
-        | grep '^garden-' | tr '\n' ' '
-      )
-      (( ${#pairs[@]} )) || { log_info "⚠ no shoots in any garden-* namespace"; continue; }
-      pair="${pairs[RANDOM % ${#pairs[@]}]}"
-      ns="${pair%%:*}"; shoot="${pair#*:}"
-    fi
-
-    curState=$(kubectl get "$resource" "$shoot" -n "$ns" \
-      -o jsonpath='{.status.lastOperation.state}')
-    if [[ "$curState" == "Error" ]]; then target="ready"; else target="error"; fi
-
-    log_info "${YELLOW}– toggling shoot '$shoot' in '$ns' from '$curState' → '$target'${NC}"
-    proj="${project:-${ns#garden-}}"
-    toggle_shoot_status "$shoot" "$proj" "$target"
-  done
-}
 
 # simulate a long-running operation (Processing→Succeeded)
-simulate_shoot_operation() {
-  local shoot="$1" project="$2" interval="$3" step="$4"
-
-  # set defaults & validate
-  : "${interval:=5}"
-  : "${step:=10}"
-  if [[ -z "$shoot" || -z "$project" ]]; then
-    log_error "Missing --shoot or --project"
-    log_error "Usage: simulate-shoot-op --shoot|-s SHOOT --project|-p PROJECT --interval|-i INTERVAL [--step|-t STEP]"
-    exit 1
-  fi
-
-  local ns="garden-${project}"
-  local now progress=0
-
-  log_info "${YELLOW}Starting simulated operation on $shoot (interval ${interval}s, +${step}% each)${NC}"
-  while (( progress < 100 )); do
-    sleep "$interval"
-    progress=$(( progress + step ))
-    (( progress > 100 )) && progress=100
-    now="$(now)"
-    run_quiet kubectl patch shoot "$shoot" -n "$ns" --type=merge --subresource=status -p '{
-      "status":{
-        "lastOperation":{
-          "state":"Processing",
-          "progress":'"${progress}"',
-          "lastUpdateTime":"'"${now}"'"
-        }
-      }
-    }'
-    log_info "– $shoot: progress ${progress}%"
-  done
-  now="$(now)"
-  run_quiet kubectl patch shoot "$shoot" -n "$ns" --type=merge --subresource=status -p '{
-    "status":{
-      "lastOperation":{
-        "state":"Succeeded",
-        "progress":100,
-        "lastUpdateTime":"'"${now}"'"
-      }
-    }
-  }'
-  log_info "${GREEN}✔ $shoot: operation Succeeded${NC}"
-}
 
 create_shoot () {
     local name=$1 ns=$2
-    local statusError=false
-    if [[ $name == *-error ]]; then
-        statusError=true
-    fi
     log_info "${YELLOW}Creating shoot resource '$name' in namespace '$ns'...${NC}"
-    apply_yaml_template "${RES_DIR}/shoot-template.yaml" "$name" "$ns" \
-        | kubectl apply -n "$ns" -f - >/dev/null
-
-    # Derive project name from namespace (strip 'garden-')
-    local project="${ns#garden-}"
-
-    if [ "$statusError" = true ]; then
-        log_info "${YELLOW}Marking shoot '$name' as Error...${NC}"
-        toggle_shoot_status "$name" "$project" "error"
-    else
-        log_info "${YELLOW}Marking shoot '$name' as Ready...${NC}"
-        toggle_shoot_status "$name" "$project" "ready"
-    fi
-
+    apply_yaml_template "${RES_DIR}/shoot-template.yaml" "$name" "$ns" | kubectl apply -n "$ns" -f - >/dev/null
+    patch_shoot_ready "$name" "$ns"
 }
+
 
 generate_uid() {
     tr -dc a-z0-9 </dev/urandom | head -c10
@@ -595,59 +465,6 @@ case "$COMMAND" in
     [[ -z "$PROJECT" || -z "$COUNT" ]] && { log_error "Missing --project or --count"; exit 1; }
     bulk_shoots "$PROJECT" "$COUNT"
     ;;
-
-  toggle-shoot-status)
-    SHOOT=""; PROJECT=""; MODE=""
-    while [[ $# -gt 0 ]]; do
-      case "$1" in
-        --workspace|-ws) shift 2;;
-        --shoot|-s)      SHOOT="$2";    shift 2;;
-        --project|-p)    PROJECT="$2";  shift 2;;
-        --mode|-m)       MODE="$2";     shift 2;;
-        -h|--help)       show_help;;
-        *) log_error "Unknown option: $1"; exit 1;;
-      esac
-    done
-    [[ -z "$SHOOT" || -z "$PROJECT" || -z "$MODE" ]] && { log_error "Missing --shoot, --project or --mode"; exit 1; }
-    toggle_shoot_status "$SHOOT" "$PROJECT" "$MODE"
-    ;;
-
-  random-update-shoots)
-    PROJECT=""; INTERVAL=""
-    while [[ $# -gt 0 ]]; do
-      case "$1" in
-        --workspace|-ws) shift 2;;
-        --project|-p)    PROJECT="$2";    shift 2;;
-        --interval|-i)   INTERVAL="$2";  shift 2;;
-        -h|--help)       show_help;;
-        *) log_error "Unknown option: $1"; exit 1;;
-      esac
-    done
-    [[ -z "$INTERVAL" ]] && { log_error "Missing --interval"; exit 1; }
-    if [[ -n "$PROJECT" ]]; then
-      random_update_shoots "$PROJECT" "$INTERVAL"
-    else
-      random_update_shoots "$INTERVAL"
-    fi
-    ;;
-
-  simulate-shoot-op)
-    SHOOT=""; PROJECT=""; INTERVAL=""; STEP=""
-    while [[ $# -gt 0 ]]; do
-      case "$1" in
-        --workspace|-ws)  shift 2;;
-        --shoot|-s)       SHOOT="$2";     shift 2;;
-        --project|-p)     PROJECT="$2";   shift 2;;
-        --interval|-i)    INTERVAL="$2";  shift 2;;
-        --step|-t)        STEP="$2";      shift 2;;
-        -h|--help)        show_help;;
-        *) log_error "Unknown option: $1"; exit 1;;
-      esac
-    done
-    [[ -z "$SHOOT" || -z "$PROJECT" || -z "$INTERVAL" ]] && { log_error "Missing --shoot, --project or --interval"; exit 1; }
-    simulate_shoot_operation "$SHOOT" "$PROJECT" "$INTERVAL" "${STEP:-10}"
-    ;;
-
   *)
     log_error "${RED}Unknown command: $COMMAND${NC}"
     show_help

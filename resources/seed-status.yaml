@@ -1,0 +1,32 @@
+status:
+  conditions:
+    - lastTransitionTime: DATEPLACEHOLDER
+      lastUpdateTime: DATEPLACEHOLDER
+      message: All extensions installed into the seed cluster are ready and healthy.
+      reason: AllExtensionsReady
+      status: "True"
+      type: ExtensionsReady
+    - lastTransitionTime: DATEPLACEHOLDER
+      lastUpdateTime: DATEPLACEHOLDER
+      message: Gardenlet is posting ready status.
+      reason: GardenletReady
+      status: "True"
+      type: GardenletReady
+    - lastTransitionTime: DATEPLACEHOLDER
+      lastUpdateTime: DATEPLACEHOLDER
+      message: Backup Buckets are available.
+      reason: BackupBucketsAvailable
+      status: "True"
+      type: BackupBucketsReady
+    - lastTransitionTime: DATEPLACEHOLDER
+      lastUpdateTime: DATEPLACEHOLDER
+      message: All system components are healthy.
+      reason: SystemComponentsRunning
+      status: "True"
+      type: SeedSystemComponentsHealthy
+  lastOperation:
+    description: Error occurred during shoot reconciliation.
+    lastUpdateTime: DATEPLACEHOLDER
+    progress: 100
+    state: Error
+    type: Reconcile
