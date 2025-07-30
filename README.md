@@ -180,17 +180,12 @@ The environment supports two modes:
 * **kcp binary missing?**
   Run `./gardenerless-setup.sh setup-kcp`.
 
+* **issues with kubectl ws plugin**
+  Ensure that both your `GOPATH` and `PATH` environment variables are correctly set. Your `PATH` must include `$GOPATH/bin`.
+
+
 * **Server not running?**
   Run `./gardenerless-setup.sh start-kcp`.
 
-* **Missing admin kubeconfig?**
-  Verify `kcp/.kcp/admin.kubeconfig` exists.
-
-* **Permission issues?**
-  Check Git, Go, and `kubectl` credentials and access.
-
 If problems persist, inspect script logs and ensure all prerequisites are met.
 
----
-
-Happy clustering!
