@@ -121,6 +121,9 @@ setup_kcp() {
   export IGNORE_GO_VERSION=1
   (cd "$KCP_DIR" && run_quiet make build)
   log_info "${GREEN}kcp built successfully.${NC}"
+  (cd "$KCP_DIR" && run_quiet make install)
+  (cd "$KCP_DIR" && run_quiet go install ./cmd/...)
+  log_info "${GREEN}kcp kubectl plugins installed successfully.${NC}"
 }
 
 configure_macos_alias() {
@@ -206,7 +209,7 @@ create_demo_ws() {
     echo -e "${YELLOW}Creating demo workspace $ws...${NC}"
     switch_to_root
     run_silent kubectl ws create "$ws" --enter || run_quiet kubectl ws "$ws"
-    echo -e "${YELLOW}Setting up dashboard-suer service account...${NC}"
+    echo -e "${YELLOW}Setting up dashboard-user service account...${NC}"
     run_quiet kubectl create ns garden
     run_quiet kubectl create sa dashboard-user -n garden
     run_quiet kubectl create clusterrolebinding cluster-admin --clusterrole=cluster-admin --serviceaccount=garden:dashboard-user
@@ -244,7 +247,7 @@ which will always create the workspaces under root.
 
 Commands:
   ${GREEN}setup-kcp${NC}
-      Download & build kcp
+      Download & build kcp, install kcp kubectl plugins
 
   ${GREEN}start-kcp${NC}
       Start kcp server (foreground)
