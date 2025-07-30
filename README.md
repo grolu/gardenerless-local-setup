@@ -21,45 +21,6 @@ The environment supports two modes:
 
 ---
 
-## Features
-
-* **kcp Repository Management**
-  Clones or updates `github.com/kcp-dev/kcp` under `./kcp`, builds the binary, and keeps it current.
-
-* **Dynamic KUBECONFIG Handling**
-  Generates temporary kubeconfigs based on `kcp/.kcp/admin.kubeconfig` and transparently switches contexts and workspaces.
-
-* **Workspace & Context Navigation**
-  `--workspace <path>` lets you enter any top-level or nested workspace under `root:`.
-
-* **Local CRD & Resource Bootstrap**
-  Applies Gardener CRDs and seed/cloudprofile YAMLs from `resources/`—no external downloads.
-
-* **Project & Shoot Commands**
-
-  * `add-project` / `add-projects`
-  * `add-shoot`   / `add-shoots`
-    Projects and shoots can be created individually or in bulk, with status automatically set to **Ready**.
-
-* **Demo Environments**
-
-  * `create-demo-workspaces` (animals, plants, cars)
-  * `create-single-demo-workspace`
-    All CRDs, AWS secrets, and sample shoots/projects are preconfigured.
-
-* **Token Management**
-  `get-token` creates/refreshes a 24h dashboard-user token in the `garden` namespace.
-
-* **Reset Utilities**
-
-  * `reset-kcp`        clears all local state
-  * `reset-kcp-certs`  removes certs/keys
-
-* **macOS Compatibility**
-  Automatically configures the `lo0` alias (`192.168.65.1/24`) if needed.
-
----
-
 ## Prerequisites
 
 * **Git**
@@ -90,15 +51,9 @@ The environment supports two modes:
    ./gardenerless-setup.sh start-kcp
    ```
 
-   > macOS users: loopback alias is added automatically.
+   > macOS users: loopback alias is added automatically (if needed). You will be prompted for root access
 
-4. **(Optional) Reset state**
-
-   ```bash
-   ./gardenerless-setup.sh reset-kcp
-   ```
-
-5. **Create a single demo workspace**
+4. **Create a single demo workspace**
 
    ```bash
    ./gardenerless-setup.sh create-single-demo-workspace
@@ -106,7 +61,7 @@ The environment supports two modes:
 
    → Kubeconfig: `kcp/.kcp/dashboard.kubeconfig`
 
-6. **Create full demo suite for kcp mode**
+   **Or Create full demo suite for kcp mode**
 
    ```bash
    ./gardenerless-setup.sh create-demo-workspaces
