@@ -53,6 +53,8 @@ The environment supports two modes:
 
    > macOS users: loopback alias is added automatically (if needed). You will be prompted for root access
 
+   > The server will run until you terminate the command. You need to open a second terminal to continue with the next steps
+
 4. **Create a single demo workspace**
 
    ```bash
@@ -61,13 +63,22 @@ The environment supports two modes:
 
    → Kubeconfig: `kcp/.kcp/dashboard.kubeconfig`
 
-   **Or Create full demo suite for kcp mode**
+   **Or create full demo suite for kcp mode**
 
    ```bash
    ./gardenerless-setup.sh create-demo-workspaces
    ```
 
    → Kubeconfig: `kcp/.kcp/dashboard-kcp.kubeconfig`
+
+5. **Get token for Gardener Dashboard**
+
+   The script automatically creates requires service accounts and rbac rules for you.
+   You can obtain a token for a Gardener Dashboard usder with admin privileges by running
+
+   ```bash
+   ./gardenerless-setup.sh get-token
+   ```
 
 ---
 
