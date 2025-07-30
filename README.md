@@ -2,7 +2,20 @@ Local kcp Management Script for Gardener Dashboard (`gardenerless-setup.sh`)
 
 ## Introduction
 
-This repository provides a Bash script (`gardenerless-setup.sh`) to simplify the setup and management of a local **kcp** installation for the Gardener Dashboard. It automates workspace and project management, CRD/application of essential resources, and demo environment creation—enabling you to get started quickly with a dedicated, self-contained kcp setup.
+This repository provides a Bash script (`gardenerless-setup.sh`) to set up a **local, Gardener-like environment** for development and testing purposes. It allows you to run the Gardener Dashboard against a Kubernetes-like API server without requiring a full Gardener installation (i.e., no controllers or actual Gardener components are running).
+
+Instead, it uses the `kcp` binary to serve a simulated Kubernetes API. This setup enables:
+
+* Making API calls as if interacting with a Gardener API server
+* Running the Gardener Dashboard in a self-contained demo environment
+* Simulating load and operations via demo resources and a UI
+
+The environment supports two modes:
+
+* **Single-cluster mode**, mimicking a regular Kubernetes API server
+* **Multi-workspace mode**, simulating multiple logical clusters via `kcp` workspaces
+
+> **Note:** Running the dashboard in multi-workspace mode requires a *kcp-aware* Dashboard instance. This is currently an experimental feature not yet merged into the main Gardener Dashboard branch.
 
 > **Note:** This script works with a dedicated kcp directory (`kcp/`) and uses hardcoded kubeconfig paths. All network alias handling (for macOS) is built in—no manual aliasing is required.
 
