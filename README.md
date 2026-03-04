@@ -24,7 +24,7 @@ The environment supports two modes:
 ## Prerequisites
 
 * **Git**
-* **Go** (for building kcp)
+* **Go**, **make** (for building kcp)
 * **kubectl**
 * **yq** (CLI YAML processor)
 
@@ -186,6 +186,11 @@ The environment supports two modes:
 * **issues with kubectl ws plugin**
   Ensure that both your `GOPATH` and `PATH` environment variables are correctly set. Your `PATH` must include `$GOPATH/bin`.
 
+  If not, try to set it:
+  ```bash
+  export GOPATH=$HOME/go
+  export PATH=$PATH:$GOROOT/bin:$GOPATH/bin
+  ```
 
 * **Server not running?**
   Run `./gardenerless-setup.sh start-kcp`.
