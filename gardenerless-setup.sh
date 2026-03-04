@@ -6,7 +6,7 @@ GREEN=$'\033[0;32m'
 YELLOW=$'\033[0;33m'
 BLUE=$'\033[0;34m'
 NC=$'\033[0m'
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
 # logging helpers (keep using echo -e for ANSI colors)
 log_info()  { echo -e "$*";                  }
@@ -26,8 +26,35 @@ dashboard_single_cfg="${KCP_DIR}/.kcp/dashboard.kubeconfig"
 run_quiet()  { "$@" >/dev/null; }
 run_silent() { "$@" >/dev/null 2>&1; }
 
+# yq wrappers also allows ubuntu yq to work
+# Return 0 if this is mikefarah/yq (Go), else 1 (kislyuk/yq wrapper)
+is_mikefarah_yq() {
+  yq --version 2>/dev/null | grep -qiE 'mikefarah|version v?[0-9]+\.'  # v4 prints like "yq (https://github.com/mikefarah/yq/) version v4.x.x"
+}
+
+# yq expression file  -> prints value
+yq_read() {
+  local expr=$1
+  local file=$2
+  if is_mikefarah_yq; then
+    yq e "$expr" "$file"
+  else
+    # kislyuk/yq -> jq underneath; -r = raw string (no quotes)
+    yq -r "$expr" "$file"
+  fi
+}
+
+# stdin yaml -> stdout json
+yq_to_json() {
+  if is_mikefarah_yq; then
+    yq -o=json
+  else
+    yq -c '.'
+  fi
+}
+
 init_kubeconfig() {
-  KUBECONFIG="${KCP_KUBECONFIG}"
+  export KUBECONFIG="${KCP_KUBECONFIG}"
 }
 
 switch_to_root() {
@@ -69,7 +96,7 @@ apply_cluster_resources() {
   run_quiet kubectl apply -f "$RES_DIR/cloudprofile-*.yaml"
   run_quiet kubectl apply -f "$RES_DIR/seed-*.yaml"
   for f in "$RES_DIR"/seed-*.yaml; do
-    name=$(yq e '.metadata.name' "$f")
+    name=$(yq_read '.metadata.name' "$f")
     patch_seed_status "$name"
   done
 }
@@ -91,9 +118,9 @@ patch_shoot_ready() {
   local project="${ns#garden-}"
   local now="$(now)"
   local patch_yaml
-  patch_yaml=$(apply_yaml_template "${RES_DIR}/shoot-status-ready.yaml" "$shoot" "$ns" | sed -E "s/DATEPLACEHOLDER/${now}/g")
+  patch_yaml=$(apply_yaml_template "${RES_DIR}/status-shoot-ready.yaml" "$shoot" "$ns" | sed -E "s/DATEPLACEHOLDER/${now}/g")
   local json_patch
-  json_patch=$(echo "$patch_yaml" | yq -o=json)
+  json_patch=$(printf '%s' "$patch_yaml" | yq_to_json)
   run_quiet kubectl patch shoot "$shoot" -n "$ns" --type=merge --subresource=status -p "$json_patch"
   run_quiet kubectl label shoot "$shoot" -n "$ns" shoot.gardener.cloud/status="healthy" --overwrite
 }
@@ -102,9 +129,9 @@ patch_seed_status() {
   local seed="$1"
   local now="$(now)"
   local patch_yaml
-  patch_yaml=$(sed -e "s/DATEPLACEHOLDER/${now}/g" "$RES_DIR/seed-status.yaml")
+  patch_yaml=$(sed -e "s/DATEPLACEHOLDER/${now}/g" "$RES_DIR/status-seed.yaml")
   local json_patch
-  json_patch=$(echo "$patch_yaml" | yq -o=json)
+  json_patch=$(printf '%s' "$patch_yaml" | yq_to_json)
   run_quiet kubectl patch seed "$seed" --type=merge --subresource=status -p "$json_patch"
 }
 
@@ -126,22 +153,13 @@ setup_kcp() {
   log_info "${GREEN}kcp kubectl plugins installed successfully.${NC}"
 }
 
-configure_macos_alias() {
-  if [[ "$(uname)" == "Darwin" ]] && ! ifconfig lo0 | grep -q "192.168.65.1"; then
-    log_info "${YELLOW}Adding lo0 alias 192.168.65.1/24 (sudo)...${NC}"
-    sudo ifconfig lo0 alias 192.168.65.1/24 >/dev/null
-  fi
-}
-
 start_kcp_server() {
   if pgrep -f "$KCP_DIR/bin/kcp"; then
     log_info "${GREEN}kcp server already running.${NC}"
     exit 0
   fi
-  configure_macos_alias
-  log_info "${YELLOW}Starting kcp server...${NC}"
   cd "$KCP_DIR"
-  exec ./bin/kcp start --bind-address=192.168.65.1
+  exec ./bin/kcp start --bind-address=127.0.0.1
 }
 
 get_shoots() {
