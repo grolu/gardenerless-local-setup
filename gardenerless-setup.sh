@@ -34,12 +34,13 @@ is_mikefarah_yq() {
 
 # yq expression file  -> prints value
 yq_read() {
-  expr=$1
-  file=$2
+  local expr=$1
+  local file=$2
   if is_mikefarah_yq; then
     yq e "$expr" "$file"
   else
-    yq "$expr" "$file"
+    # kislyuk/yq -> jq underneath; -r = raw string (no quotes)
+    yq -r "$expr" "$file"
   fi
 }
 
