@@ -53,7 +53,7 @@ yq_to_json() {
 }
 
 init_kubeconfig() {
-  KUBECONFIG="${KCP_KUBECONFIG}"
+  export KUBECONFIG="${KCP_KUBECONFIG}"
 }
 
 switch_to_root() {
