@@ -1,18 +1,17 @@
 apiVersion: core.gardener.cloud/v1beta1
 kind: Seed
 metadata:
-  name: azure
+  name: gcp-test
 spec:
   provider:
-    type: azure
-    region: westeurope
+    type: gcp
+    region: us-central1
     zones:
-    - "1"
-    - "2"
-    - "3"
+    - us-central1-a
+    - us-central1-b
   dns:
     provider:
-      type: azure-dns
+      type: google-clouddns
       secretRef:
         name: ingress-secret
         namespace: garden
@@ -27,4 +26,4 @@ spec:
       services: 100.104.0.0/13
   settings:
     scheduling:
-      visible: true
+      visible: false

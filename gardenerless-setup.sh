@@ -98,6 +98,10 @@ apply_cluster_resources() {
   for f in "$RES_DIR"/seed-*.yaml; do
     name=$(yq_read '.metadata.name' "$f")
     patch_seed_status "$name"
+    # Create managed seed for all seeds except soil
+    if [[ "$name" != "soil" ]]; then
+      create_managed_seed "$f"
+    fi
   done
 }
 
@@ -133,6 +137,48 @@ patch_seed_status() {
   local json_patch
   json_patch=$(printf '%s' "$patch_yaml" | yq_to_json)
   run_quiet kubectl patch seed "$seed" --type=merge --subresource=status -p "$json_patch"
+}
+
+patch_shoot_seed_status() {
+  local shoot="$1"
+  local now="$(now)"
+  local patch_yaml
+  patch_yaml=$(sed -e "s/NAMEPLACEHOLDER/${shoot}/g" -e "s/DATEPLACEHOLDER/${now}/g" "$RES_DIR/status-shoot-seed.yaml")
+  local json_patch
+  json_patch=$(printf '%s' "$patch_yaml" | yq_to_json)
+  run_quiet kubectl patch shoot "$shoot" -n garden --type=merge --subresource=status -p "$json_patch"
+  run_quiet kubectl label shoot "$shoot" -n garden shoot.gardener.cloud/status="healthy" --overwrite
+}
+
+create_managed_seed() {
+  local seed_file="$1"
+  local seed_name
+  seed_name=$(yq_read '.metadata.name' "$seed_file")
+  local provider
+  provider=$(yq_read '.spec.provider.type' "$seed_file")
+  local region
+  region=$(yq_read '.spec.provider.region' "$seed_file")
+  local zone
+  zone=$(yq_read '.spec.provider.zones[0]' "$seed_file")
+
+  log_info "${YELLOW}Creating managed seed shoot for '$seed_name'...${NC}"
+
+  # Create seed shoot
+  sed -e "s/NAMEPLACEHOLDER/${seed_name}/g" \
+      -e "s/CLOUDPROFILEPLACEHOLDER/${provider}/g" \
+      -e "s/PROVIDERPLACEHOLDER/${provider}/g" \
+      -e "s/REGIONPLACEHOLDER/${region}/g" \
+      -e "s/ZONEPLACEHOLDER/${zone}/g" \
+      -e "s/SEEDPLACEHOLDER/soil/g" \
+      "$RES_DIR/shoot-seed-template.yaml" | run_quiet kubectl apply -n garden -f -
+
+  # Patch seed shoot status
+  patch_shoot_seed_status "$seed_name"
+
+  # Create ManagedSeed resource
+  log_info "${YELLOW}Creating ManagedSeed resource for '$seed_name'...${NC}"
+  sed -e "s/NAMEPLACEHOLDER/${seed_name}/g" \
+      "$RES_DIR/managedseed-template.yaml" | run_quiet kubectl apply -n garden -f -
 }
 
 setup_kcp() {

@@ -1,0 +1,82 @@
+status:
+  conditions:
+    - type: APIServerAvailable
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: HealthzRequestSucceeded
+      message: API server /healthz endpoint responded with success status code.
+    - type: ControlPlaneHealthy
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: ControlPlaneRunning
+      message: All control plane components are healthy.
+    - type: ObservabilityComponentsHealthy
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: ObservabilityComponentsRunning
+      message: All observability components are healthy.
+    - type: EveryNodeReady
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: EveryNodeReady
+      message: All nodes are ready.
+    - type: SystemComponentsHealthy
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: SystemComponentsRunning
+      message: All system components are healthy.
+    - type: ExtensionsReady
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: AllExtensionsReady
+      message: All extensions installed into the seed cluster are ready and healthy.
+    - type: GardenletReady
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: GardenletReady
+      message: Gardenlet is posting ready status.
+    - type: BackupBucketsReady
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: BackupBucketsAvailable
+      message: Backup Buckets are available.
+    - type: SeedSystemComponentsHealthy
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: SystemComponentsRunning
+      message: All system components are healthy.
+  constraints:
+    - type: HibernationPossible
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: NoProblematicWebhooks
+      message: All webhooks are properly configured.
+    - type: MaintenancePreconditionsSatisfied
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: NoProblematicWebhooks
+      message: All webhooks are properly configured.
+  gardener:
+    id: abcd1234-5678-90ab-cdef-1234567890ab
+    name: gardenlet-foo
+    version: v1
+  hibernated: false
+  technicalID: shoot--garden--NAMEPLACEHOLDER
+  uid: 123456781234-garden-NAMEPLACEHOLDER
+  lastOperation:
+    description: Shoot cluster has been successfully reconciled.
+    lastUpdateTime: 'DATEPLACEHOLDER'
+    progress: 100
+    state: Succeeded
+    type: Reconcile

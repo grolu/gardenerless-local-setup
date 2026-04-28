@@ -1,4 +1,8 @@
 status:
+  allocatable:
+    shoots: "300"
+  capacity:
+    shoots: "300"
   conditions:
     - lastTransitionTime: DATEPLACEHOLDER
       lastUpdateTime: DATEPLACEHOLDER
@@ -24,6 +28,11 @@ status:
       reason: SystemComponentsRunning
       status: "True"
       type: SeedSystemComponentsHealthy
+  gardener:
+    id: x7kRmWpF2bNcYvH9LqJsTg4DnE6aUoXwZ1MfKj8QhVrA3CdBpY5iOlWuSeGtIb0m
+    name: gardenlet-856fbb875c-dfs7k
+    version: v1.141.0
+  kubernetesVersion: v1.34.3
   lastOperation:
     description: Error occurred during shoot reconciliation.
     lastUpdateTime: DATEPLACEHOLDER

@@ -1,18 +1,17 @@
 apiVersion: core.gardener.cloud/v1beta1
 kind: Seed
 metadata:
-  name: azure
+  name: soil
 spec:
   provider:
-    type: azure
-    region: westeurope
+    type: aws
+    region: us-east-1
     zones:
-    - "1"
-    - "2"
-    - "3"
+    - us-east-1a
+    - us-east-1b
   dns:
     provider:
-      type: azure-dns
+      type: aws-route53
       secretRef:
         name: ingress-secret
         namespace: garden
