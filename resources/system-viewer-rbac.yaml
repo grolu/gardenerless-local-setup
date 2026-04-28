@@ -1,0 +1,205 @@
+---
+aggregationRule:
+  clusterRoleSelectors:
+  - matchLabels:
+      gardener.cloud/role: viewer
+  - matchLabels:
+      gardener.cloud/role: project-viewer
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    gardener.cloud/role: viewers
+    resources.gardener.cloud/managed-by: gardener
+    shoot.gardener.cloud/no-cleanup: "true"
+  name: gardener.cloud:system:viewers
+rules:
+- apiGroups:
+  - core.gardener.cloud
+  resources:
+  - backupbuckets
+  - backupentries
+  - cloudprofiles
+  - namespacedcloudprofiles
+  - controllerinstallations
+  - quotas
+  - projects
+  - seeds
+  - shoots
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - security.gardener.cloud
+  resources:
+  - credentialsbindings
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - seedmanagement.gardener.cloud
+  - dashboard.gardener.cloud
+  - settings.gardener.cloud
+  - operations.gardener.cloud
+  resources:
+  - '*'
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  - namespaces
+  - resourcequotas
+  - services
+  - endpoints
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterroles
+  - clusterrolebindings
+  - roles
+  - rolebindings
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - mutatingwebhookconfigurations
+  - validatingwebhookconfigurations
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apiregistration.k8s.io
+  resources:
+  - apiservices
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - authorization.extensions.gardener.cloud
+  resources:
+  - observabilityapps/plutono
+  - observabilityapps/prometheus
+  - observabilityapps/prometheus-shoot
+  - observabilityapps/alertmanager-shoot
+  verbs:
+  - get
+  - create
+- apiGroups:
+  - ""
+  resources:
+  - events
+  - configmaps
+  - resourcequotas
+  - serviceaccounts
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - core.gardener.cloud
+  resources:
+  - shoots
+  - secretbindings
+  - quotas
+  - namespacedcloudprofiles
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - settings.gardener.cloud
+  resources:
+  - openidconnectpresets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - operations.gardener.cloud
+  resources:
+  - bastions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - roles
+  - rolebindings
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - core.gardener.cloud
+  resources:
+  - shoots/viewerkubeconfig
+  verbs:
+  - create
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: landscape-viewer
+  namespace: garden
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gardener.cloud:system:viewers:landscape-viewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gardener.cloud:system:viewers
+subjects:
+- kind: ServiceAccount
+  name: landscape-viewer
+  namespace: garden

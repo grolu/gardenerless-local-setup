@@ -232,6 +232,7 @@ create_demo_ws() {
     run_quiet kubectl create sa dashboard-user -n garden
     run_quiet kubectl create clusterrolebinding cluster-admin --clusterrole=cluster-admin --serviceaccount=garden:dashboard-user
     run_quiet kubectl set subject clusterrolebinding cluster-admin --serviceaccount=garden:dashboard-user
+    run_quiet kubectl apply -f "$RES_DIR/system-viewer-rbac.yaml"
     setup_gardener_crds
     apply_cluster_resources
     case "$ws" in
@@ -283,7 +284,8 @@ Commands:
       Apply cloudprofile & seed YAMLs
 
   ${GREEN}get-token${NC}
-      Print dashboard-user service account token
+      ${YELLOW}[--service-account|-sa NAME]${NC}
+      Print service account token (default: dashboard-user)
 
   ${GREEN}dashboard-kubeconfigs${NC}
       Print paths of dashboard kubeconfigs
@@ -401,7 +403,15 @@ case "$COMMAND" in
     ;;
 
   get-token)
-    kubectl -n garden create token dashboard-user --duration 24h
+    SA_NAME="dashboard-user"
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --service-account|-sa) SA_NAME="$2"; shift 2;;
+        -h|--help) show_help;;
+        *) log_error "Unknown option: $1"; exit 1;;
+      esac
+    done
+    kubectl -n garden create token "$SA_NAME" --duration 24h
     ;;
 
   dashboard-kubeconfigs)

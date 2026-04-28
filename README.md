@@ -78,6 +78,12 @@ The environment supports two modes:
    ```bash
    ./gardenerless-setup.sh get-token
    ```
+
+   To get a read-only token for the `landscape-viewer` service account (see `resources/system-viewer-rbac.yaml`):
+
+   ```bash
+   ./gardenerless-setup.sh get-token --service-account landscape-viewer
+   ```
    
 ---
 
@@ -139,7 +145,7 @@ The environment supports two modes:
 | **reset-kcp-certs**              | —                                                                            | Remove certs/keys in `kcp/.kcp`                               |                                           |
 | **setup-gardener-crds**          | —                                                                            | Apply CRDs from `resources/crds/`                             |                                           |
 | **cluster-resources**            | —                                                                            | Apply `cloudprofile-*.yaml` & `seed-*.yaml` from `resources/` |                                           |
-| **get-token**                    | —                                                                            | Create/refresh 24h token for `dashboard-user` SA              |                                           |
+| **get-token**                    | `[--service-account <name>]`                                                 | Create/refresh 24h token for the given SA (default: `dashboard-user`)        |                                           |
 | **dashboard-kubeconfigs**        | —                                                                            | Print paths of generated dashboard kubeconfigs                |                                           |
 | **add-project**                  | `--name <name>`<br>`[--namespace <ns>]`                                      | Create one project (status=Ready)                             |                                           |
 | **add-projects**                 | `--count <n>`                                                                | Bulk-create *n* projects (random UIDs, status=Ready)          |                                           |
