@@ -74,6 +74,19 @@ status:
   hibernated: false
   technicalID: shoot--garden--NAMEPLACEHOLDER
   uid: 123456781234-garden-NAMEPLACEHOLDER
+  advertisedAddresses:
+    - name: external
+      url: https://api.NAMEPLACEHOLDER.garden.shoot.fake.example.com
+    - name: internal
+      url: https://api.NAMEPLACEHOLDER.garden.internal.fake.example.com
+    - name: service-account-issuer
+      url: https://api.NAMEPLACEHOLDER.garden.internal.fake.example.com
+    - name: ingress/oauth2-ingress-0-1a27e0/0/0
+      url: https://prometheus-shoot-shoot--garden--NAMEPLACEHOLDER-0.ingress.fake.seed.example.com
+      application: prometheus--prometheus
+    - name: ingress/oauth2-ingress-a06281/0/0
+      url: https://plutono-shoot--garden--NAMEPLACEHOLDER.ingress.fake.seed.example.com
+      application: credativ--plutono
   lastOperation:
     description: Shoot cluster has been successfully reconciled.
     lastUpdateTime: 'DATEPLACEHOLDER'

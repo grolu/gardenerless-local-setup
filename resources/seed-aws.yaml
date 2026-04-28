@@ -25,6 +25,12 @@ spec:
       services: 100.104.0.0/13
   accessRestrictions:
     - name: eu-access-only
+  ingress:
+    controller:
+      kind: nginx
+      providerConfig:
+        use-proxy-protocol: true
+    domain: ingress.aws.seed.fake.example.com
   settings:
     scheduling:
       visible: true

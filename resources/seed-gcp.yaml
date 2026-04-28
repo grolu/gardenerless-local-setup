@@ -25,6 +25,12 @@ spec:
     shootDefaults:
       pods: 100.64.0.0/12
       services: 100.104.0.0/13
+  ingress:
+    controller:
+      kind: nginx
+      providerConfig:
+        use-proxy-protocol: true
+    domain: ingress.gcp.seed.fake.example.com
   settings:
     scheduling:
       visible: true

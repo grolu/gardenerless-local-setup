@@ -122,7 +122,7 @@ patch_shoot_ready() {
   local project="${ns#garden-}"
   local now="$(now)"
   local patch_yaml
-  patch_yaml=$(apply_yaml_template "${RES_DIR}/status-shoot-ready.yaml" "$shoot" "$ns" | sed -E "s/DATEPLACEHOLDER/${now}/g")
+  patch_yaml=$(apply_yaml_template "${RES_DIR}/status-shoot-ready.yaml" "$shoot" "$ns" | sed -E "s/DATEPLACEHOLDER/${now}/g" | sed -e "s/PROJECTPLACEHOLDER/${project}/g")
   local json_patch
   json_patch=$(printf '%s' "$patch_yaml" | yq_to_json)
   run_quiet kubectl patch shoot "$shoot" -n "$ns" --type=merge --subresource=status -p "$json_patch"

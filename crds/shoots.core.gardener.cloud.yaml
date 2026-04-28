@@ -2468,6 +2468,9 @@ spec:
                   description: ShootAdvertisedAddress contains information for the
                     shoot's Kube API server.
                   properties:
+                    application:
+                      description: Application is the name of the application that this address belongs to. e.g. prometheus--prometheus
+                      type: string
                     name:
                       description: Name of the advertised address. e.g. external
                       type: string
