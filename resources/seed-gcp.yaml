@@ -28,8 +28,6 @@ spec:
   ingress:
     controller:
       kind: nginx
-      providerConfig:
-        use-proxy-protocol: true
     domain: ingress.gcp.seed.fake.example.com
   settings:
     scheduling:
