@@ -235,6 +235,8 @@ create_demo_ws() {
     run_quiet kubectl apply -f "$RES_DIR/system-viewer-rbac.yaml"
     setup_gardener_crds
     apply_cluster_resources
+    create_project_resource "garden" "garden"
+    patch_project_status "garden"
     case "$ws" in
         demo-animals) projects="cat dog" ;;
         demo-plants)  projects="pine rose sunflower" ;;
