@@ -1,7 +1,7 @@
 apiVersion: core.gardener.cloud/v1beta1
 kind: Seed
 metadata:
-  name: alicloud-seed
+  name: alicloud
 spec:
   provider:
     type: alicloud
@@ -21,6 +21,13 @@ spec:
     nodes: 10.240.0.0/16
     pods: 10.241.128.0/17
     services: 10.241.0.0/17
+    shootDefaults:
+      pods: 100.64.0.0/12
+      services: 100.104.0.0/13
+  ingress:
+    controller:
+      kind: nginx
+    domain: ingress.alicloud.seed.fake.example.com
   settings:
     scheduling:
       visible: true

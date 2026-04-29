@@ -1,18 +1,17 @@
 apiVersion: core.gardener.cloud/v1beta1
 kind: Seed
 metadata:
-  name: gcp
+  name: soil
 spec:
   provider:
-    type: gcp
-    region: europe-west1
+    type: aws
+    region: us-east-1
     zones:
-    - europe-west1-b
-    - europe-west1-c
-    - europe-west1-d
+    - us-east-1a
+    - us-east-1b
   dns:
     provider:
-      type: google-clouddns
+      type: aws-route53
       secretRef:
         name: ingress-secret
         namespace: garden
@@ -28,7 +27,7 @@ spec:
   ingress:
     controller:
       kind: nginx
-    domain: ingress.gcp.seed.fake.example.com
+    domain: ingress.soil.seed.fake.example.com
   settings:
     scheduling:
       visible: true

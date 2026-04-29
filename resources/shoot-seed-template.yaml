@@ -1,0 +1,43 @@
+kind: Shoot
+apiVersion: core.gardener.cloud/v1beta1
+metadata:
+  name: NAMEPLACEHOLDER
+  namespace: garden
+  annotations:
+    gardener.cloud/created-by: system:serviceaccount:garden:dashboard-user
+spec:
+  cloudProfileName: CLOUDPROFILEPLACEHOLDER
+  kubernetes:
+    version: 1.30.1
+  maintenance:
+    autoUpdate:
+      kubernetesVersion: true
+      machineImageVersion: true
+    timeWindow:
+      begin: 040000+0200
+      end: 050000+0200
+  networking:
+    nodes: 10.180.0.0/16
+  provider:
+    controlPlaneConfig: {}
+    infrastructureConfig: {}
+    type: PROVIDERPLACEHOLDER
+    workers:
+      - machine:
+          image:
+            name: gardenlinux
+            version: 15.4.20220818
+          type: m5.large
+        maxSurge: 1
+        maximum: 2
+        minimum: 1
+        name: worker-seed
+        volume:
+          size: 50Gi
+          type: gp3
+        zones:
+          - "ZONEPLACEHOLDER"
+  purpose: infrastructure
+  region: REGIONPLACEHOLDER
+  secretBindingName: PROVIDERPLACEHOLDER-secret
+  seedName: SEEDPLACEHOLDER

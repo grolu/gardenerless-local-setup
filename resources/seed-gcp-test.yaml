@@ -1,15 +1,14 @@
 apiVersion: core.gardener.cloud/v1beta1
 kind: Seed
 metadata:
-  name: gcp
+  name: gcp-test
 spec:
   provider:
     type: gcp
-    region: europe-west1
+    region: us-central1
     zones:
-    - europe-west1-b
-    - europe-west1-c
-    - europe-west1-d
+    - us-central1-a
+    - us-central1-b
   dns:
     provider:
       type: google-clouddns
@@ -28,7 +27,7 @@ spec:
   ingress:
     controller:
       kind: nginx
-    domain: ingress.gcp.seed.fake.example.com
+    domain: ingress.gcp-test.seed.fake.example.com
   settings:
     scheduling:
-      visible: true
+      visible: false

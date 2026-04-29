@@ -98,6 +98,10 @@ apply_cluster_resources() {
   for f in "$RES_DIR"/seed-*.yaml; do
     name=$(yq_read '.metadata.name' "$f")
     patch_seed_status "$name"
+    # Create managed seed for all seeds except soil
+    if [[ "$name" != "soil" ]]; then
+      create_managed_seed "$f"
+    fi
   done
 }
 
@@ -118,7 +122,7 @@ patch_shoot_ready() {
   local project="${ns#garden-}"
   local now="$(now)"
   local patch_yaml
-  patch_yaml=$(apply_yaml_template "${RES_DIR}/status-shoot-ready.yaml" "$shoot" "$ns" | sed -E "s/DATEPLACEHOLDER/${now}/g")
+  patch_yaml=$(apply_yaml_template "${RES_DIR}/status-shoot-ready.yaml" "$shoot" "$ns" | sed -E "s/DATEPLACEHOLDER/${now}/g" | sed -e "s/PROJECTPLACEHOLDER/${project}/g")
   local json_patch
   json_patch=$(printf '%s' "$patch_yaml" | yq_to_json)
   run_quiet kubectl patch shoot "$shoot" -n "$ns" --type=merge --subresource=status -p "$json_patch"
@@ -133,6 +137,48 @@ patch_seed_status() {
   local json_patch
   json_patch=$(printf '%s' "$patch_yaml" | yq_to_json)
   run_quiet kubectl patch seed "$seed" --type=merge --subresource=status -p "$json_patch"
+}
+
+patch_shoot_seed_status() {
+  local shoot="$1"
+  local now="$(now)"
+  local patch_yaml
+  patch_yaml=$(sed -e "s/NAMEPLACEHOLDER/${shoot}/g" -e "s/DATEPLACEHOLDER/${now}/g" "$RES_DIR/status-shoot-seed.yaml")
+  local json_patch
+  json_patch=$(printf '%s' "$patch_yaml" | yq_to_json)
+  run_quiet kubectl patch shoot "$shoot" -n garden --type=merge --subresource=status -p "$json_patch"
+  run_quiet kubectl label shoot "$shoot" -n garden shoot.gardener.cloud/status="healthy" --overwrite
+}
+
+create_managed_seed() {
+  local seed_file="$1"
+  local seed_name
+  seed_name=$(yq_read '.metadata.name' "$seed_file")
+  local provider
+  provider=$(yq_read '.spec.provider.type' "$seed_file")
+  local region
+  region=$(yq_read '.spec.provider.region' "$seed_file")
+  local zone
+  zone=$(yq_read '.spec.provider.zones[0]' "$seed_file")
+
+  log_info "${YELLOW}Creating managed seed shoot for '$seed_name'...${NC}"
+
+  # Create seed shoot
+  sed -e "s/NAMEPLACEHOLDER/${seed_name}/g" \
+      -e "s/CLOUDPROFILEPLACEHOLDER/${provider}/g" \
+      -e "s/PROVIDERPLACEHOLDER/${provider}/g" \
+      -e "s/REGIONPLACEHOLDER/${region}/g" \
+      -e "s/ZONEPLACEHOLDER/${zone}/g" \
+      -e "s/SEEDPLACEHOLDER/soil/g" \
+      "$RES_DIR/shoot-seed-template.yaml" | run_quiet kubectl apply -n garden -f -
+
+  # Patch seed shoot status
+  patch_shoot_seed_status "$seed_name"
+
+  # Create ManagedSeed resource
+  log_info "${YELLOW}Creating ManagedSeed resource for '$seed_name'...${NC}"
+  sed -e "s/NAMEPLACEHOLDER/${seed_name}/g" \
+      "$RES_DIR/managedseed-template.yaml" | run_quiet kubectl apply -n garden -f -
 }
 
 setup_kcp() {
@@ -232,8 +278,11 @@ create_demo_ws() {
     run_quiet kubectl create sa dashboard-user -n garden
     run_quiet kubectl create clusterrolebinding cluster-admin --clusterrole=cluster-admin --serviceaccount=garden:dashboard-user
     run_quiet kubectl set subject clusterrolebinding cluster-admin --serviceaccount=garden:dashboard-user
+    run_quiet kubectl apply -f "$RES_DIR/system-viewer-rbac.yaml"
     setup_gardener_crds
     apply_cluster_resources
+    create_project_resource "garden" "garden"
+    patch_project_status "garden"
     case "$ws" in
         demo-animals) projects="cat dog" ;;
         demo-plants)  projects="pine rose sunflower" ;;
@@ -283,7 +332,8 @@ Commands:
       Apply cloudprofile & seed YAMLs
 
   ${GREEN}get-token${NC}
-      Print dashboard-user service account token
+      ${YELLOW}[--service-account|-sa NAME]${NC}
+      Print service account token (default: dashboard-user)
 
   ${GREEN}dashboard-kubeconfigs${NC}
       Print paths of dashboard kubeconfigs
@@ -401,7 +451,15 @@ case "$COMMAND" in
     ;;
 
   get-token)
-    kubectl -n garden create token dashboard-user --duration 24h
+    SA_NAME="dashboard-user"
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --service-account|-sa) SA_NAME="$2"; shift 2;;
+        -h|--help) show_help;;
+        *) log_error "Unknown option: $1"; exit 1;;
+      esac
+    done
+    kubectl -n garden create token "$SA_NAME" --duration 24h
     ;;
 
   dashboard-kubeconfigs)

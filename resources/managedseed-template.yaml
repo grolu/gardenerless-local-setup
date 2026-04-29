@@ -1,0 +1,10 @@
+apiVersion: seedmanagement.gardener.cloud/v1alpha1
+kind: ManagedSeed
+metadata:
+  name: NAMEPLACEHOLDER
+  namespace: garden
+spec:
+  shoot:
+    name: NAMEPLACEHOLDER
+  gardenlet:
+    bootstrap: BootstrapToken

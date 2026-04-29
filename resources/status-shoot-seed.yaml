@@ -8,14 +8,14 @@ status:
       message: API server /healthz endpoint responded with success status code.
     - type: ControlPlaneHealthy
       status: 'True'
-      lastTransitionTime: '2025-05-08T11:07:36Z'
-      lastUpdateTime: '2025-05-08T11:07:36Z'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
       reason: ControlPlaneRunning
       message: All control plane components are healthy.
     - type: ObservabilityComponentsHealthy
       status: 'True'
-      lastTransitionTime: '2025-05-08T14:06:23Z'
-      lastUpdateTime: '2025-05-08T14:06:23Z'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
       reason: ObservabilityComponentsRunning
       message: All observability components are healthy.
     - type: EveryNodeReady
@@ -30,13 +30,31 @@ status:
       lastUpdateTime: 'DATEPLACEHOLDER'
       reason: SystemComponentsRunning
       message: All system components are healthy.
-  constraints:
-    - type: APIServerProxyUsesHTTPProxy
+    - type: ExtensionsReady
       status: 'True'
-      lastTransitionTime: '2025-04-09T17:09:57Z'
-      lastUpdateTime: '2025-04-09T17:09:57Z'
-      reason: APIServerProxyUsesHTTPProxy
-      message: The API server proxy was reconfigured to use the HTTP proxy method.
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: AllExtensionsReady
+      message: All extensions installed into the seed cluster are ready and healthy.
+    - type: GardenletReady
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: GardenletReady
+      message: Gardenlet is posting ready status.
+    - type: BackupBucketsReady
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: BackupBucketsAvailable
+      message: Backup Buckets are available.
+    - type: SeedSystemComponentsHealthy
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: SystemComponentsRunning
+      message: All system components are healthy.
+  constraints:
     - type: HibernationPossible
       status: 'True'
       lastTransitionTime: 'DATEPLACEHOLDER'
@@ -54,20 +72,20 @@ status:
     name: gardenlet-foo
     version: v1
   hibernated: false
-  technicalID: shoot--NAMESPACEPLACEHOLDER--NAMEPLACEHOLDER
-  uid: 123456781234-NAMESPACEPLACEHOLDER-NAMEPLACEHOLDER
+  technicalID: shoot--garden--NAMEPLACEHOLDER
+  uid: 123456781234-garden-NAMEPLACEHOLDER
   advertisedAddresses:
     - name: external
-      url: https://api.NAMEPLACEHOLDER.PROJECTPLACEHOLDER.shoot.fake.example.com
+      url: https://api.NAMEPLACEHOLDER.garden.shoot.fake.example.com
     - name: internal
-      url: https://api.NAMEPLACEHOLDER.PROJECTPLACEHOLDER.internal.fake.example.com
+      url: https://api.NAMEPLACEHOLDER.garden.internal.fake.example.com
     - name: service-account-issuer
-      url: https://api.NAMEPLACEHOLDER.PROJECTPLACEHOLDER.internal.fake.example.com
+      url: https://api.NAMEPLACEHOLDER.garden.internal.fake.example.com
     - name: ingress/oauth2-ingress-0-1a27e0/0/0
-      url: https://prometheus-shoot-shoot--PROJECTPLACEHOLDER--NAMEPLACEHOLDER-0.ingress.fake.seed.example.com
+      url: https://prometheus-shoot-shoot--garden--NAMEPLACEHOLDER-0.ingress.fake.seed.example.com
       application: prometheus--prometheus
     - name: ingress/oauth2-ingress-a06281/0/0
-      url: https://plutono-shoot--PROJECTPLACEHOLDER--NAMEPLACEHOLDER.ingress.fake.seed.example.com
+      url: https://plutono-shoot--garden--NAMEPLACEHOLDER.ingress.fake.seed.example.com
       application: credativ--plutono
   lastOperation:
     description: Shoot cluster has been successfully reconciled.
