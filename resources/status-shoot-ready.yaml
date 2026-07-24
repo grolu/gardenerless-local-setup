@@ -1,4 +1,5 @@
 status:
+  lastErrors: []
   conditions:
     - type: APIServerAvailable
       status: 'True'

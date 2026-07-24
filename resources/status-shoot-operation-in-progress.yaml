@@ -1,0 +1,15 @@
+status:
+  conditions:
+    - type: APIServerAvailable
+      status: 'True'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: APIServerAvailable
+      message: The API server is available for this local fixture.
+  lastErrors: []
+  lastOperation:
+    description: Reconciliation is in progress in this local fixture.
+    lastUpdateTime: 'DATEPLACEHOLDER'
+    progress: 42
+    state: Processing
+    type: Reconcile

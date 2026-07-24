@@ -20,7 +20,8 @@ app.use((req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, 'dist')));
 
-const kubeconfigPath = process.env.KUBECONFIG || path.join(__dirname, '..', 'kcp', '.kcp', 'admin.kubeconfig');
+const kcpDir = process.env.GARDENERLESS_KCP_DIR || path.join(__dirname, '..', 'kcp');
+const kubeconfigPath = process.env.KUBECONFIG || path.join(kcpDir, '.kcp', 'admin.kubeconfig');
 console.log('Loading kubeconfig from', kubeconfigPath);
 
 function loadKubeconfig() {

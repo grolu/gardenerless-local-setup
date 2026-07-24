@@ -1,0 +1,15 @@
+status:
+  conditions:
+    - type: APIServerAvailable
+      status: 'False'
+      lastTransitionTime: 'DATEPLACEHOLDER'
+      lastUpdateTime: 'DATEPLACEHOLDER'
+      reason: APIServerUnavailable
+      message: The API server is unavailable for this local fixture.
+  lastErrors: []
+  lastOperation:
+    description: Reconciliation failed in this local fixture.
+    lastUpdateTime: 'DATEPLACEHOLDER'
+    progress: 100
+    state: Error
+    type: Reconcile
