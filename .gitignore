@@ -61,3 +61,6 @@ kubeconfig*
 
 # Gardener CRDs
 gardener-crds/
+
+# Local gardenerless kcp source and runtime state
+/kcp/
