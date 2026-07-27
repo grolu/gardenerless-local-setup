@@ -53,6 +53,16 @@ assert_api_calls_use_guarded_kubeconfig() {
   done < <(grep '^api|' "$KUBECTL_LOG")
 }
 
+test_yq_read() {
+  local expression="$1" file="$2"
+
+  if yq --version 2>/dev/null | grep -qiE 'mikefarah|version v?[0-9]+\.'; then
+    yq e "$expression" "$file"
+  else
+    yq -r "$expression" "$file"
+  fi
+}
+
 run_setup() {
   env \
     PATH="${STUB_BIN}:$PATH" \
@@ -64,6 +74,8 @@ run_setup() {
     STUB_DEMO_STATE="${STUB_DEMO_STATE:-}" \
     STUB_DASHBOARD_PROJECTS_ACCESS="${STUB_DASHBOARD_PROJECTS_ACCESS:-ready}" \
     STUB_ROOT_SWITCH="${STUB_ROOT_SWITCH:-ready}" \
+    STUB_EXISTING_CRD_NAMES="${STUB_EXISTING_CRD_NAMES-__inherit__}" \
+    STUB_CRD_GET_FAILURE="${STUB_CRD_GET_FAILURE:-}" \
     STUB_DASHBOARD_KUBECONFIG="$CANONICAL_DASHBOARD_KUBECONFIG" \
     STUB_CERT_FILE="$RUNTIME_CERT" \
     STUB_SERVER="${STUB_SERVER_OVERRIDE:-$VALID_SERVER}" \
@@ -237,6 +249,20 @@ elif [[ "${STUB_DASHBOARD_PROJECTS_ACCESS:-ready}" != "ready" && \
 elif [[ "${STUB_ROOT_SWITCH:-ready}" != "ready" && \
         "$forwarded_string" == *" ws :root "* ]]; then
   exit 1
+elif [[ "$forwarded_string" == *" get customresourcedefinition "* && \
+        "${STUB_EXISTING_CRD_NAMES-__inherit__}" != "__inherit__" ]]; then
+  crd_name="${forwarded_args[2]:-}"
+  if [[ -n "${STUB_CRD_GET_FAILURE:-}" && \
+        "$crd_name" == "$STUB_CRD_GET_FAILURE" ]]; then
+    exit 1
+  fi
+  for existing_crd_name in ${STUB_EXISTING_CRD_NAMES:-}; do
+    if [[ "$crd_name" == "$existing_crd_name" ]]; then
+      printf 'customresourcedefinition.apiextensions.k8s.io/%s\n' "$crd_name"
+      break
+    fi
+  done
+  exit 0
 elif [[ "${STUB_DEMO_STATE:-}" == "missing" && "$forwarded_string" == *" ws :root:demo "* ]]; then
   exit 1
 elif [[ "${STUB_DEMO_STATE:-}" == "missing" && "$forwarded_string" == *" get "* ]]; then
@@ -497,6 +523,10 @@ fi
 # Established wait for every applied definition.
 crd_files=("${SCRIPT_DIR}"/crds/*.yaml)
 expected_crd_count="${#crd_files[@]}"
+crd_names=()
+for crd_file in "${crd_files[@]}"; do
+  crd_names+=("$(test_yq_read '.metadata.name' "$crd_file")")
+done
 
 : >"$KUBECTL_LOG"
 run_setup setup-gardener-crds >"$COMMAND_OUTPUT" 2>&1
@@ -508,6 +538,133 @@ setup_crd_wait_count="$(
 [[ "$setup_crd_wait_count" -eq "$expected_crd_count" ]] \
   || fail "setup-gardener-crds did not wait for every applied CRD to become Established"
 assert_api_calls_use_guarded_kubeconfig "CRD setup"
+
+# A cold ensure discovers every absent CRD before it mutates any CRD. It then
+# applies every missing file exactly once before issuing the first Established
+# wait, allowing the API server to establish the definitions concurrently.
+cp "$ADMIN_KUBECONFIG" "$DASHBOARD_KUBECONFIG"
+: >"$KUBECTL_LOG"
+STUB_DEMO_STATE=healthy STUB_EXISTING_CRD_NAMES="" \
+  run_setup ensure-single-demo-workspace >"$COMMAND_OUTPUT" 2>&1
+cold_crd_apply_count="$(
+  grep -cF "<apply><-f><${SCRIPT_DIR}/crds/" "$KUBECTL_LOG"
+)"
+[[ "$cold_crd_apply_count" -eq "$expected_crd_count" ]] \
+  || fail "cold ensure did not apply every missing CRD exactly once"
+cold_crd_wait_count="$(
+  grep -c '^api|.*<wait><--for=condition=Established><--timeout=60s><customresourcedefinition/' "$KUBECTL_LOG"
+)"
+[[ "$cold_crd_wait_count" -eq "$expected_crd_count" ]] \
+  || fail "cold ensure did not wait for every missing CRD exactly once"
+last_cold_crd_apply_line="$(
+  grep -nF "<apply><-f><${SCRIPT_DIR}/crds/" "$KUBECTL_LOG" \
+    | tail -n 1 \
+    | cut -d: -f1
+)"
+first_cold_crd_wait_line="$(
+  grep -m 1 -n '^api|.*<wait><--for=condition=Established>' "$KUBECTL_LOG" \
+    | cut -d: -f1
+)"
+[[ -n "$last_cold_crd_apply_line" && -n "$first_cold_crd_wait_line" && \
+   "$last_cold_crd_apply_line" -lt "$first_cold_crd_wait_line" ]] \
+  || fail "cold ensure did not submit every missing CRD before the first Established wait"
+assert_api_calls_use_guarded_kubeconfig "cold CRD ensure"
+
+# A healthy repeat still discovers all CRDs but neither applies nor waits for
+# definitions that already exist.
+all_crd_names="${crd_names[*]}"
+: >"$KUBECTL_LOG"
+STUB_DEMO_STATE=healthy STUB_EXISTING_CRD_NAMES="$all_crd_names" \
+  run_setup ensure-single-demo-workspace >"$COMMAND_OUTPUT" 2>&1
+existing_crd_get_count="$(
+  grep -c '^api|.*<get><customresourcedefinition>' "$KUBECTL_LOG"
+)"
+[[ "$existing_crd_get_count" -eq "$expected_crd_count" ]] \
+  || fail "healthy ensure did not inspect every existing CRD"
+if grep -Fq "<apply><-f><${SCRIPT_DIR}/crds/" "$KUBECTL_LOG"; then
+  fail "healthy ensure reapplied an existing CRD"
+fi
+if grep -q '^api|.*<wait><--for=condition=Established>' "$KUBECTL_LOG"; then
+  fail "healthy ensure waited for an existing CRD"
+fi
+assert_api_calls_use_guarded_kubeconfig "healthy CRD ensure"
+
+# A mixed state preserves existing definitions while applying and waiting for
+# every missing definition exactly once. All missing applies still precede the
+# first wait.
+middle_crd_index=$((expected_crd_count / 2))
+last_crd_index=$((expected_crd_count - 1))
+mixed_existing_crd_names=(
+  "${crd_names[0]}"
+  "${crd_names[$middle_crd_index]}"
+  "${crd_names[$last_crd_index]}"
+)
+mixed_existing_crds="${mixed_existing_crd_names[*]}"
+expected_mixed_missing_count=$((expected_crd_count - ${#mixed_existing_crd_names[@]}))
+: >"$KUBECTL_LOG"
+STUB_DEMO_STATE=healthy STUB_EXISTING_CRD_NAMES="$mixed_existing_crds" \
+  run_setup ensure-single-demo-workspace >"$COMMAND_OUTPUT" 2>&1
+mixed_crd_apply_count="$(
+  grep -cF "<apply><-f><${SCRIPT_DIR}/crds/" "$KUBECTL_LOG"
+)"
+[[ "$mixed_crd_apply_count" -eq "$expected_mixed_missing_count" ]] \
+  || fail "mixed ensure did not apply every missing CRD exactly once"
+mixed_crd_wait_count="$(
+  grep -c '^api|.*<wait><--for=condition=Established><--timeout=60s><customresourcedefinition/' "$KUBECTL_LOG"
+)"
+[[ "$mixed_crd_wait_count" -eq "$expected_mixed_missing_count" ]] \
+  || fail "mixed ensure did not wait for every missing CRD exactly once"
+for crd_index in "${!crd_files[@]}"; do
+  crd_file="${crd_files[$crd_index]}"
+  crd_name="${crd_names[$crd_index]}"
+  crd_apply_count="$(
+    grep -cF "<apply><-f><${crd_file}>" "$KUBECTL_LOG" || true
+  )"
+  crd_wait_count="$(
+    grep -cF "<customresourcedefinition/${crd_name}>" "$KUBECTL_LOG" || true
+  )"
+  case " $mixed_existing_crds " in
+    *" $crd_name "*)
+      [[ "$crd_apply_count" -eq 0 && "$crd_wait_count" -eq 0 ]] \
+        || fail "mixed ensure applied or waited for existing CRD '$crd_name'"
+      ;;
+    *)
+      [[ "$crd_apply_count" -eq 1 && "$crd_wait_count" -eq 1 ]] \
+        || fail "mixed ensure did not apply and wait exactly once for missing CRD '$crd_name'"
+      ;;
+  esac
+done
+last_mixed_crd_apply_line="$(
+  grep -nF "<apply><-f><${SCRIPT_DIR}/crds/" "$KUBECTL_LOG" \
+    | tail -n 1 \
+    | cut -d: -f1
+)"
+first_mixed_crd_wait_line="$(
+  grep -m 1 -n '^api|.*<wait><--for=condition=Established>' "$KUBECTL_LOG" \
+    | cut -d: -f1
+)"
+[[ -n "$last_mixed_crd_apply_line" && -n "$first_mixed_crd_wait_line" && \
+   "$last_mixed_crd_apply_line" -lt "$first_mixed_crd_wait_line" ]] \
+  || fail "mixed ensure did not submit every missing CRD before the first Established wait"
+assert_api_calls_use_guarded_kubeconfig "mixed CRD ensure"
+
+# An unexpected get failure late in discovery fails closed before any CRD has
+# been applied or waited for, including definitions discovered missing earlier.
+: >"$KUBECTL_LOG"
+if STUB_DEMO_STATE=healthy STUB_EXISTING_CRD_NAMES="" \
+    STUB_CRD_GET_FAILURE="${crd_names[$middle_crd_index]}" \
+    run_setup ensure-single-demo-workspace >"$COMMAND_OUTPUT" 2>&1; then
+  fail "CRD ensure continued after an unexpected discovery failure"
+fi
+grep -Fq "could not inspect customresourcedefinition '${crd_names[$middle_crd_index]}'" "$COMMAND_OUTPUT" \
+  || fail "CRD discovery failure did not identify the definition that could not be inspected"
+if grep -Fq "<apply><-f><${SCRIPT_DIR}/crds/" "$KUBECTL_LOG"; then
+  fail "CRD discovery failure applied a definition before discovery completed"
+fi
+if grep -q '^api|.*<wait><--for=condition=Established>' "$KUBECTL_LOG"; then
+  fail "CRD discovery failure waited for a definition"
+fi
+assert_api_calls_use_guarded_kubeconfig "failed CRD discovery"
 
 # A missing demo must switch successfully to root before issuing the workspace
 # create request. If that root switch fails, creation is refused.
