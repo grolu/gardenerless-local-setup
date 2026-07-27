@@ -470,6 +470,8 @@ ensure_system_viewer_rbac() {
 
 ensure_gardener_crds() {
   local file crd_name resource_status
+  local -a missing_crd_files=()
+  local -a missing_crd_names=()
 
   for file in "${SCRIPT_DIR}"/crds/*.yaml; do
     if ! crd_name=$(yq_read '.metadata.name' "$file"); then
@@ -482,7 +484,16 @@ ensure_gardener_crds() {
       continue
     fi
     [[ $resource_status -eq 1 ]] || return "$resource_status"
+
+    missing_crd_files+=("$file")
+    missing_crd_names+=("$crd_name")
+  done
+
+  for file in "${missing_crd_files[@]}"; do
     active_kubectl apply -f "$file" >/dev/null || return 1
+  done
+
+  for crd_name in "${missing_crd_names[@]}"; do
     wait_for_crd_established "$crd_name" || return 1
   done
 }
