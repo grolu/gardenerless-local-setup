@@ -16,14 +16,28 @@ log_error() { echo -e "$*" >&2;              }
 now()       { date -u +%Y-%m-%dT%H:%M:%SZ;    }
 
 RES_DIR="${SCRIPT_DIR}/resources"
+KCP_PROVENANCE_FILE="${SCRIPT_DIR}/kcp-version.env"
+# shellcheck source=kcp-version.env
+if ! source "$KCP_PROVENANCE_FILE"; then
+  log_error "Error: could not load kcp provenance from '$KCP_PROVENANCE_FILE'."
+  exit 1
+fi
+if [[ ! "$KCP_RELEASE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
+   [[ ! "$KCP_COMMIT" =~ ^[0-9a-f]{40}$ ]] || \
+   [[ -z "$KCP_REPO" ]]; then
+  log_error "Error: invalid kcp provenance in '$KCP_PROVENANCE_FILE'."
+  exit 1
+fi
 KCP_DIR="${GARDENERLESS_KCP_DIR:-${SCRIPT_DIR}/kcp}"
 KCP_STATE_DIR="${KCP_DIR}/.kcp"
-KCP_BINARY="${KCP_DIR}/bin/kcp"
-KCP_REPO="https://github.com/kcp-dev/kcp.git"
+KCP_BIN_DIR="${KCP_DIR}/bin"
+KCP_BINARY="${KCP_BIN_DIR}/kcp"
 KCP_KUBECONFIG="${KCP_STATE_DIR}/admin.kubeconfig"
 dashboard_kcp_cfg="${KCP_STATE_DIR}/dashboard-kcp.kubeconfig"
 dashboard_single_cfg="${KCP_STATE_DIR}/dashboard.kubeconfig"
 ACTIVE_GARDENERLESS_KUBECONFIG=""
+PATH="${KCP_BIN_DIR}:${PATH}"
+export PATH
 
 # quiet / silent wrappers
 run_quiet()  { "$@" >/dev/null; }
@@ -261,21 +275,77 @@ create_managed_seed() {
 }
 
 setup_kcp() {
-  if [ -d "$KCP_DIR" ]; then
-    log_info "${YELLOW}Resetting kcp repo to latest HEAD...${NC}"
-    run_quiet git -C "$KCP_DIR" fetch --all || return 1
-    run_quiet git -C "$KCP_DIR" reset --hard origin/main || return 1
-  else
-    log_info "${YELLOW}Cloning kcp repo...${NC}"
-    run_quiet git clone "$KCP_REPO" "$KCP_DIR" || return 1
+  local tag_ref="refs/tags/${KCP_RELEASE}"
+  local origin_url peeled_tag_commit tag_commit checkout_commit
+  local binary
+
+  if ! mkdir -p "$KCP_DIR"; then
+    log_error "Error: could not create the kcp runtime directory '$KCP_DIR'."
+    return 1
   fi
-  log_info "${YELLOW}Building kcp...${NC}"
-  export IGNORE_GO_VERSION=1
-  (cd "$KCP_DIR" && run_quiet make build) || return 1
-  log_info "${GREEN}kcp built successfully.${NC}"
-  (cd "$KCP_DIR" && run_quiet make install) || return 1
-  (cd "$KCP_DIR" && run_quiet go install ./cmd/...) || return 1
-  log_info "${GREEN}kcp kubectl plugins installed successfully.${NC}"
+
+  if ! run_silent git -C "$KCP_DIR" rev-parse --git-dir; then
+    log_info "${YELLOW}Initializing the repository-local kcp checkout...${NC}"
+    run_quiet git -C "$KCP_DIR" init || return 1
+  fi
+
+  if origin_url=$(git -C "$KCP_DIR" remote get-url origin 2>/dev/null); then
+    if [[ "$origin_url" != "$KCP_REPO" ]]; then
+      log_info "${YELLOW}Restoring the repository-owned kcp origin...${NC}"
+      run_quiet git -C "$KCP_DIR" remote set-url origin "$KCP_REPO" || return 1
+    fi
+  else
+    run_quiet git -C "$KCP_DIR" remote add origin "$KCP_REPO" || return 1
+  fi
+
+  log_info "${YELLOW}Fetching kcp ${KCP_RELEASE}...${NC}"
+  run_quiet git -C "$KCP_DIR" fetch \
+    --force \
+    --depth=1 \
+    --no-tags \
+    origin \
+    "${tag_ref}:${tag_ref}" || return 1
+
+  if ! peeled_tag_commit=$(git -C "$KCP_DIR" rev-parse --verify "${tag_ref}^{}"); then
+    log_error "Error: could not peel kcp tag ${KCP_RELEASE}."
+    return 1
+  fi
+  if [[ "$peeled_tag_commit" != "$KCP_COMMIT" ]]; then
+    log_error "Error: kcp tag ${KCP_RELEASE} peels to ${peeled_tag_commit}, expected ${KCP_COMMIT}."
+    return 1
+  fi
+
+  if ! tag_commit=$(git -C "$KCP_DIR" rev-parse --verify "${tag_ref}^{commit}"); then
+    log_error "Error: kcp tag ${KCP_RELEASE} does not resolve to a commit."
+    return 1
+  fi
+  if [[ "$tag_commit" != "$KCP_COMMIT" ]]; then
+    log_error "Error: kcp tag ${KCP_RELEASE} resolves to commit ${tag_commit}, expected ${KCP_COMMIT}."
+    return 1
+  fi
+
+  log_info "${YELLOW}Checking out verified kcp commit ${KCP_COMMIT}...${NC}"
+  run_quiet git -C "$KCP_DIR" checkout --detach --force "$KCP_COMMIT" || return 1
+  run_quiet git -C "$KCP_DIR" clean -ffdx -e .kcp/ || return 1
+
+  if ! checkout_commit=$(git -C "$KCP_DIR" rev-parse --verify HEAD); then
+    log_error "Error: could not verify the checked-out kcp commit."
+    return 1
+  fi
+  if [[ "$checkout_commit" != "$KCP_COMMIT" ]]; then
+    log_error "Error: checked-out kcp commit is ${checkout_commit}, expected ${KCP_COMMIT}."
+    return 1
+  fi
+
+  log_info "${YELLOW}Building repository-local kcp binaries...${NC}"
+  run_quiet make -C "$KCP_DIR" build || return 1
+  for binary in kcp kubectl-kcp kubectl-ws; do
+    if [[ ! -x "${KCP_BIN_DIR}/${binary}" ]]; then
+      log_error "Error: kcp build did not produce executable '${KCP_BIN_DIR}/${binary}'."
+      return 1
+    fi
+  done
+  log_info "${GREEN}kcp ${KCP_RELEASE} binaries are available in ${KCP_BIN_DIR}.${NC}"
 }
 
 start_kcp_server() {
@@ -789,6 +859,7 @@ status_resource_count() {
 
 show_status() {
   local context server workspace projects shoots seeds cloudprofiles
+  local checkout_commit checkout_mode
 
   printf 'Gardenerless status (read-only)\n'
   status_line "Runtime directory:" "$KCP_DIR"
@@ -796,6 +867,22 @@ show_status() {
     status_line "Runtime state:" "present"
   else
     status_line "Runtime state:" "absent"
+  fi
+  status_line "Expected kcp release:" "$KCP_RELEASE"
+  status_line "Expected kcp commit:" "$KCP_COMMIT"
+  if checkout_commit=$(git -C "$KCP_DIR" rev-parse --verify HEAD 2>/dev/null); then
+    if git -C "$KCP_DIR" symbolic-ref -q HEAD >/dev/null 2>&1; then
+      checkout_mode="attached"
+    else
+      checkout_mode="detached"
+    fi
+    if [[ "$checkout_commit" == "$KCP_COMMIT" && "$checkout_mode" == "detached" ]]; then
+      status_line "kcp source provenance:" "verified (${checkout_mode} ${checkout_commit})"
+    else
+      status_line "kcp source provenance:" "mismatch (${checkout_mode} ${checkout_commit})"
+    fi
+  else
+    status_line "kcp source provenance:" "unavailable"
   fi
 
   status_line "Prerequisites:" ""
@@ -887,7 +974,7 @@ ${GREEN}create-demo-workspaces${NC} always creates its demo workspaces under roo
 
 Commands:
   ${GREEN}setup-kcp${NC}
-      Download & build kcp, install kcp kubectl plugins
+      Fetch verified kcp ${KCP_RELEASE} and build repository-local binaries
 
   ${GREEN}start-kcp${NC}
       Start kcp server (foreground)

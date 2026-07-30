@@ -1,0 +1,20 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^kcp-version\\.env$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=github-tags depName=kcp-dev/kcp versioning=semver-coerced\\nKCP_RELEASE=(?<currentValue>v\\d+\\.\\d+\\.\\d+)\\nKCP_COMMIT=(?<currentDigest>[a-f0-9]{40})"
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "kcp-dev/kcp",
+      "versioningTemplate": "semver-coerced"
+    }
+  ]
+}
