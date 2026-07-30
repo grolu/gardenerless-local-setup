@@ -13,9 +13,9 @@ loopback API endpoint, and that runtime's serving certificate chain. Ambient
 
 ## Prerequisites
 
-Install `git`, `go`, `make`, `kubectl`, `yq`, and `openssl`. Building the local
-kcp runtime also needs network access to fetch kcp; normal fixture inspection
-does not.
+Install `git`, `go`, `make`, `jq`, `kubectl`, `yq`, and `openssl`. Building the
+local kcp runtime also needs network access to fetch kcp and its Go modules;
+normal fixture inspection does not.
 
 ## Select the local runtime
 
@@ -27,9 +27,9 @@ explicitly:
 export GARDENERLESS_KCP_DIR=/absolute/path/to/local/kcp
 ```
 
-The selected directory contains the kcp source checkout, binary, `.kcp` state,
-admin kubeconfig, and generated dashboard kubeconfigs. Repository-owned CRDs
-and fixture templates are always read from this checkout.
+The selected directory contains the kcp source checkout, repository-local
+binaries, `.kcp` state, admin kubeconfig, and generated dashboard kubeconfigs.
+Repository-owned CRDs and fixture templates are always read from this checkout.
 
 Do not point `GARDENERLESS_KCP_DIR` at a shared, remote, staging, or production
 environment. A missing, unexpected, non-loopback, or TLS-mismatched kubeconfig
@@ -45,10 +45,41 @@ exist:
 ./gardenerless-setup.sh start-kcp
 ```
 
+`setup-kcp` fetches only the release tag pinned in
+[`kcp-version.env`](kcp-version.env), verifies both its peeled object and commit,
+checks out that commit in detached-HEAD mode, and builds kcp plus its kubectl
+plugins into `$GARDENERLESS_KCP_DIR/bin`. It does not run `make install` or
+`go install`, and the setup script automatically adds this local bin directory
+to its own `PATH`. Repeating the command refreshes the source and binaries at
+the same verified commit while preserving `$GARDENERLESS_KCP_DIR/.kcp`.
+Treat everything else in `$GARDENERLESS_KCP_DIR` as generated setup output:
+`setup-kcp` discards local source changes and stale untracked or ignored build
+artifacts to make the next build use only the verified checkout.
+
 `start-kcp` runs in the foreground. On macOS it can request permission to add a
 loopback alias when required. Do not run `setup-kcp`, `reset-kcp`, or
 `reset-kcp-certs` in an automated verification flow; resetting removes reusable
 local state.
+
+### KCP provenance and updates
+
+[`kcp-version.env`](kcp-version.env) is the machine-readable source of truth for
+the expected upstream repository, stable release, and commit. The setup script
+sources this file directly, so other automation can read the same values
+without copying version-selection logic. For example:
+
+```bash
+set -a
+. ./kcp-version.env
+set +a
+test "$(git -C "${GARDENERLESS_KCP_DIR:-./kcp}" rev-parse HEAD)" = "$KCP_COMMIT"
+```
+
+`status` also reports the expected release and commit and whether the local
+source is a matching detached checkout. Renovate is configured in
+[`renovate.json`](renovate.json) to update the release and its commit digest
+together; review those updates normally and let `setup-kcp` perform the same
+verification before building.
 
 From a second terminal, first inspect the selected runtime:
 
@@ -160,7 +191,7 @@ selection or resource access. `--workspace` selects a workspace directly under
 
 | Command | Purpose |
 | --- | --- |
-| `setup-kcp` | Clone and build the local kcp binary and plugins. |
+| `setup-kcp` | Fetch the pinned, verified kcp release and build its local binary and plugins. |
 | `start-kcp` | Start the local kcp server in the foreground. |
 | `status` | Read-only local runtime and guarded fixture status. |
 | `ensure-single-demo-workspace` | Create only missing baseline fixture resources. |
@@ -191,7 +222,10 @@ For script changes, run the fixture-only guard suite:
 
 ```bash
 bash tests/gardenerless-setup-guard-test.sh
+bash tests/setup-kcp-test.sh
 ```
 
-The suite supplies temporary kubeconfigs, certificates, process stubs, and a
-kubectl stub; it does not contact a running kcp server or any external API.
+The guard suite supplies temporary kubeconfigs, certificates, process stubs,
+and a kubectl stub. The setup suite stubs git and make while asserting the exact
+pinned workflow. Neither suite contacts a running kcp server or any external
+API.
