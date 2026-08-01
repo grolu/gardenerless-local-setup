@@ -107,9 +107,6 @@ case "$command_name" in
         fi
         printf '%s\n' "${repo}/.git"
         ;;
-      --verify:refs/tags/v0.32.3^\{\})
-        printf '%s\n' "${STUB_PEELED_COMMIT:-$KCP_EXPECTED_COMMIT}"
-        ;;
       --verify:refs/tags/v0.32.3^\{commit\})
         printf '%s\n' "${STUB_TAG_COMMIT:-$KCP_EXPECTED_COMMIT}"
         ;;
@@ -219,7 +216,6 @@ run_setup_kcp() {
     KCP_GO_LOG="$GO_LOG" \
     KCP_RUNTIME_BIN_TRAP_LOG="$RUNTIME_BIN_TRAP_LOG" \
     KCP_EXPECTED_COMMIT="$EXPECTED_COMMIT" \
-    STUB_PEELED_COMMIT="${STUB_PEELED_COMMIT:-}" \
     STUB_TAG_COMMIT="${STUB_TAG_COMMIT:-}" \
     "$GARDENERLESS_SETUP" setup-kcp
 }
@@ -237,10 +233,6 @@ assert_log_line \
   "git|-C|${RUNTIME_DIR}|fetch|--force|--depth=1|--no-tags|origin|refs/tags/${EXPECTED_RELEASE}:refs/tags/${EXPECTED_RELEASE}" \
   "$GIT_LOG" \
   "setup-kcp did not fetch only the pinned tag"
-assert_log_line \
-  "git|-C|${RUNTIME_DIR}|rev-parse|--verify|refs/tags/${EXPECTED_RELEASE}^{}" \
-  "$GIT_LOG" \
-  "setup-kcp did not verify the peeled tag"
 assert_log_line \
   "git|-C|${RUNTIME_DIR}|rev-parse|--verify|refs/tags/${EXPECTED_RELEASE}^{commit}" \
   "$GIT_LOG" \
@@ -308,25 +300,9 @@ grep -Eq "^kcp source provenance:[[:space:]]+verified \\(detached ${EXPECTED_COM
   || fail "status did not verify the detached kcp checkout"
 assert_runtime_bin_traps_unused status
 
-# A tag that does not peel to the manifest commit is rejected before checkout
-# or build.
+# A tag that does not resolve to the manifest commit is rejected before build.
 make_lines_before="$(wc -l <"$MAKE_LOG" | tr -d ' ')"
 git_lines_before="$(wc -l <"$GIT_LOG" | tr -d ' ')"
-if STUB_PEELED_COMMIT="$WRONG_COMMIT" \
-    run_setup_kcp "$BAD_RUNTIME_DIR" >"$COMMAND_OUTPUT" 2>&1; then
-  fail "setup-kcp accepted a mismatched peeled tag"
-fi
-grep -Fq "peels to ${WRONG_COMMIT}, expected ${EXPECTED_COMMIT}" "$COMMAND_OUTPUT" \
-  || fail "setup-kcp did not explain the peeled-tag mismatch"
-[[ "$(wc -l <"$MAKE_LOG" | tr -d ' ')" == "$make_lines_before" ]] \
-  || fail "setup-kcp built after a peeled-tag mismatch"
-if tail -n "+$((git_lines_before + 1))" "$GIT_LOG" | grep -Fq '|checkout|'; then
-  fail "setup-kcp checked out a mismatched peeled tag"
-fi
-
-# The commit dereference is independently checked even when the generic peel
-# matches the expected object.
-make_lines_before="$(wc -l <"$MAKE_LOG" | tr -d ' ')"
 if STUB_TAG_COMMIT="$WRONG_COMMIT" \
     run_setup_kcp "$BAD_RUNTIME_DIR" >"$COMMAND_OUTPUT" 2>&1; then
   fail "setup-kcp accepted a mismatched tag commit"
@@ -335,5 +311,8 @@ grep -Fq "resolves to commit ${WRONG_COMMIT}, expected ${EXPECTED_COMMIT}" "$COM
   || fail "setup-kcp did not explain the tag-commit mismatch"
 [[ "$(wc -l <"$MAKE_LOG" | tr -d ' ')" == "$make_lines_before" ]] \
   || fail "setup-kcp built after a tag-commit mismatch"
+if tail -n "+$((git_lines_before + 1))" "$GIT_LOG" | grep -Fq '|checkout|'; then
+  fail "setup-kcp checked out a mismatched tag commit"
+fi
 
 printf 'PASS: setup-kcp is pinned, local, idempotent, and preserves runtime state\n'

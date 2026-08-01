@@ -439,7 +439,7 @@ verify_kcp_json() {
 
 setup_kcp() {
   local tag_ref="refs/tags/${KCP_RELEASE}"
-  local origin_url peeled_tag_commit tag_commit checkout_commit
+  local origin_url tag_commit checkout_commit
   local binary
 
   if ! mkdir -p "$KCP_DIR"; then
@@ -472,15 +472,6 @@ setup_kcp() {
     --no-tags \
     origin \
     "${tag_ref}:${tag_ref}" || return 1
-
-  if ! peeled_tag_commit=$(git -C "$KCP_DIR" rev-parse --verify "${tag_ref}^{}"); then
-    log_error "Error: could not peel kcp tag ${KCP_RELEASE}."
-    return 1
-  fi
-  if [[ "$peeled_tag_commit" != "$KCP_COMMIT" ]]; then
-    log_error "Error: kcp tag ${KCP_RELEASE} peels to ${peeled_tag_commit}, expected ${KCP_COMMIT}."
-    return 1
-  fi
 
   if ! tag_commit=$(git -C "$KCP_DIR" rev-parse --verify "${tag_ref}^{commit}"); then
     log_error "Error: kcp tag ${KCP_RELEASE} does not resolve to a commit."
