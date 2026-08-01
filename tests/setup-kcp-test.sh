@@ -81,10 +81,13 @@ set -euo pipefail
 } >>"$KCP_GIT_LOG"
 
 repo=""
-if [[ "${1:-}" == "-C" ]]; then
-  repo="$2"
-  shift 2
-fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -c) shift 2 ;;
+    -C) repo="$2"; shift 2 ;;
+    *) break ;;
+  esac
+done
 
 command_name="${1:-}"
 shift || true
@@ -92,6 +95,12 @@ shift || true
 case "$command_name" in
   rev-parse)
     case "${1:-}:${2:-}" in
+      --is-inside-work-tree:)
+        printf 'true\n'
+        ;;
+      --show-toplevel:)
+        printf '%s\n' "$repo"
+        ;;
       --git-dir:)
         if [[ ! -d "${repo}/.git" ]]; then
           exit 1
@@ -115,6 +124,14 @@ case "$command_name" in
         exit 1
         ;;
     esac
+    ;;
+  symbolic-ref)
+    [[ "$*" == "-q HEAD" ]]
+    exit 1
+    ;;
+  status)
+    [[ "$*" == "--porcelain=v1 --untracked-files=all --ignored=matching --ignore-submodules=none --no-ahead-behind" ]]
+    printf '!! .kcp/\n!! bin/kcp\n'
     ;;
   init)
     mkdir -p "${repo}/.git"
@@ -180,13 +197,16 @@ chmod +x "${STUB_BIN}/make"
 
 cat >"${STUB_BIN}/go" <<'EOF'
 #!/bin/bash
+set -euo pipefail
+
 {
   printf 'go'
   printf '|%s' "$@"
   printf '\n'
 } >>"$KCP_GO_LOG"
-printf 'setup-kcp must not invoke go directly\n' >&2
-exit 1
+[[ "${1:-}" == "version" && "${2:-}" == "-m" && "${3:-}" == */bin/kcp ]]
+printf '%s: go1.test\n' "$3"
+printf '\tbuild\tvcs.revision=%s\n' "$KCP_EXPECTED_COMMIT"
 EOF
 chmod +x "${STUB_BIN}/go"
 
@@ -238,10 +258,13 @@ assert_log_line \
   "$MAKE_LOG" \
   "setup-kcp did not use the repository-local build target"
 
-if grep -Eq '(^|\|)(clone|--all|install)(\||$)' "$GIT_LOG" "$MAKE_LOG"; then
+if grep -Eq '(^|\|)(clone|--all|install)(\||$)' "$GIT_LOG" "$MAKE_LOG" "$GO_LOG"; then
   fail "setup-kcp used an unpinned fetch or global install path"
 fi
-[[ ! -s "$GO_LOG" ]] || fail "setup-kcp invoked go install directly"
+assert_log_line \
+  "go|version|-m|${RUNTIME_DIR}/bin/kcp" \
+  "$GO_LOG" \
+  "setup-kcp did not verify the built kcp binary metadata"
 for binary in kcp kubectl-kcp kubectl-ws; do
   [[ -x "${RUNTIME_DIR}/bin/${binary}" ]] \
     || fail "setup-kcp did not retain repository-local ${binary}"

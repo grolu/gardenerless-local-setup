@@ -274,6 +274,169 @@ create_managed_seed() {
       "$RES_DIR/managedseed-template.yaml" | run_quiet active_kubectl apply -n garden -f -
 }
 
+KCP_VERIFY_ERROR=""
+KCP_VERIFY_STATUS="unavailable"
+KCP_VERIFIED_COMMIT=""
+
+kcp_verification_failed() {
+  KCP_VERIFY_ERROR="$1"
+  return 1
+}
+
+# Keep verification reads from refreshing Git's index or invoking a configured
+# filesystem monitor. This path must remain safe for automation to call.
+kcp_git_read() {
+  GIT_OPTIONAL_LOCKS=0 git \
+    -c core.fsmonitor=false \
+    -c core.untrackedCache=false \
+    -C "$KCP_DIR" \
+    "$@"
+}
+
+verify_kcp_worktree_root() {
+  local selected_root worktree_root inside_worktree
+
+  if [[ ! -d "$KCP_DIR" ]]; then
+    kcp_verification_failed "selected kcp runtime directory '$KCP_DIR' does not exist"
+    return
+  fi
+  if ! selected_root=$(cd -- "$KCP_DIR" 2>/dev/null && pwd -P); then
+    kcp_verification_failed "could not resolve selected kcp runtime directory '$KCP_DIR'"
+    return
+  fi
+  if ! inside_worktree=$(kcp_git_read rev-parse --is-inside-work-tree 2>/dev/null) || \
+     [[ "$inside_worktree" != "true" ]]; then
+    kcp_verification_failed "selected kcp runtime '$KCP_DIR' is not a Git worktree"
+    return
+  fi
+  if ! worktree_root=$(kcp_git_read rev-parse --show-toplevel 2>/dev/null) || \
+     ! worktree_root=$(cd -- "$worktree_root" 2>/dev/null && pwd -P); then
+    kcp_verification_failed "could not determine the Git worktree root for '$KCP_DIR'"
+    return
+  fi
+  if [[ "$worktree_root" != "$selected_root" ]]; then
+    kcp_verification_failed "selected kcp runtime '$selected_root' is not the Git worktree root '$worktree_root'"
+    return
+  fi
+}
+
+verify_kcp_checkout() {
+  local checkout_commit checkout_state checkout_line symbolic_ref_status
+
+  KCP_VERIFIED_COMMIT=""
+  KCP_VERIFY_STATUS="unavailable"
+  verify_kcp_worktree_root || return 1
+
+  if ! checkout_commit=$(kcp_git_read rev-parse --verify HEAD 2>/dev/null); then
+    kcp_verification_failed "could not resolve HEAD in kcp runtime '$KCP_DIR'"
+    return
+  fi
+  KCP_VERIFY_STATUS="mismatch"
+  if [[ ! "$checkout_commit" =~ ^[0-9a-f]{40}$ ]]; then
+    kcp_verification_failed "kcp checkout HEAD '$checkout_commit' is not a 40-character lowercase commit"
+    return
+  fi
+  if [[ "$checkout_commit" != "$KCP_COMMIT" ]]; then
+    kcp_verification_failed "kcp checkout HEAD is ${checkout_commit}, expected ${KCP_COMMIT}; run setup-kcp"
+    return
+  fi
+
+  kcp_git_read symbolic-ref -q HEAD >/dev/null 2>&1
+  symbolic_ref_status=$?
+  if [[ $symbolic_ref_status -eq 0 ]]; then
+    kcp_verification_failed "kcp checkout is attached to a branch; run setup-kcp to restore detached HEAD ${KCP_COMMIT}"
+    return
+  fi
+  if [[ $symbolic_ref_status -ne 1 ]]; then
+    kcp_verification_failed "could not determine whether the kcp checkout uses detached HEAD"
+    return
+  fi
+
+  if ! checkout_state=$(kcp_git_read status \
+      --porcelain=v1 \
+      --untracked-files=all \
+      --ignored=matching \
+      --ignore-submodules=none \
+      --no-ahead-behind 2>/dev/null); then
+    kcp_verification_failed "could not inspect kcp checkout drift"
+    return
+  fi
+  while IFS= read -r checkout_line; do
+    [[ -z "$checkout_line" ]] && continue
+    case "$checkout_line" in
+      "!! .kcp/"|"!! bin/"*) ;;
+      *)
+        kcp_verification_failed "unexpected kcp checkout drift: ${checkout_line}; run setup-kcp"
+        return
+        ;;
+    esac
+  done <<<"$checkout_state"
+
+  KCP_VERIFIED_COMMIT="$checkout_commit"
+  KCP_VERIFY_STATUS="verified"
+}
+
+verify_kcp_binary() {
+  local build_info build_line embedded_revision="" revision_count=0
+
+  if [[ -L "$KCP_BINARY" ]]; then
+    kcp_verification_failed "kcp binary '$KCP_BINARY' must not be a symbolic link; run setup-kcp"
+    return
+  fi
+  if [[ ! -f "$KCP_BINARY" ]]; then
+    kcp_verification_failed "kcp binary '$KCP_BINARY' is missing or not a regular file; run setup-kcp"
+    return
+  fi
+  if [[ ! -x "$KCP_BINARY" ]]; then
+    kcp_verification_failed "kcp binary '$KCP_BINARY' is not executable; run setup-kcp"
+    return
+  fi
+  if ! command -v go >/dev/null 2>&1; then
+    kcp_verification_failed "go is required to inspect '$KCP_BINARY' with 'go version -m'"
+    return
+  fi
+  if ! build_info=$(go version -m "$KCP_BINARY" 2>&1); then
+    kcp_verification_failed "could not read Go build metadata from '$KCP_BINARY'; run setup-kcp"
+    return
+  fi
+
+  while IFS= read -r build_line; do
+    case "$build_line" in
+      $'\tbuild\tvcs.revision='*)
+        embedded_revision="${build_line#$'\tbuild\tvcs.revision='}"
+        ((revision_count += 1))
+        ;;
+    esac
+  done <<<"$build_info"
+  if [[ $revision_count -ne 1 ]]; then
+    kcp_verification_failed "kcp binary must contain exactly one vcs.revision, found ${revision_count}; run setup-kcp"
+    return
+  fi
+  if [[ ! "$embedded_revision" =~ ^[0-9a-f]{40}$ ]]; then
+    kcp_verification_failed "kcp binary vcs.revision '$embedded_revision' is not a 40-character lowercase commit; run setup-kcp"
+    return
+  fi
+  if [[ "$embedded_revision" != "$KCP_COMMIT" ]]; then
+    kcp_verification_failed "kcp binary vcs.revision is ${embedded_revision}, expected ${KCP_COMMIT}; run setup-kcp"
+    return
+  fi
+}
+
+verify_kcp_runtime() {
+  KCP_VERIFY_ERROR=""
+  verify_kcp_checkout && verify_kcp_binary
+}
+
+verify_kcp_json() {
+  if ! verify_kcp_runtime; then
+    log_error "Error: kcp runtime verification failed: ${KCP_VERIFY_ERROR}."
+    return 1
+  fi
+
+  printf '{"schemaVersion":1,"release":"%s","commit":"%s"}\n' \
+    "$KCP_RELEASE" "$KCP_VERIFIED_COMMIT"
+}
+
 setup_kcp() {
   local tag_ref="refs/tags/${KCP_RELEASE}"
   local origin_url peeled_tag_commit tag_commit checkout_commit
@@ -287,6 +450,10 @@ setup_kcp() {
   if ! run_silent git -C "$KCP_DIR" rev-parse --git-dir; then
     log_info "${YELLOW}Initializing the repository-local kcp checkout...${NC}"
     run_quiet git -C "$KCP_DIR" init || return 1
+  fi
+  if ! verify_kcp_worktree_root; then
+    log_error "Error: refusing unsafe kcp checkout: ${KCP_VERIFY_ERROR}."
+    return 1
   fi
 
   if origin_url=$(git -C "$KCP_DIR" remote get-url origin 2>/dev/null); then
@@ -336,6 +503,10 @@ setup_kcp() {
     log_error "Error: checked-out kcp commit is ${checkout_commit}, expected ${KCP_COMMIT}."
     return 1
   fi
+  if ! verify_kcp_checkout; then
+    log_error "Error: checked-out kcp source failed verification: ${KCP_VERIFY_ERROR}."
+    return 1
+  fi
 
   log_info "${YELLOW}Building repository-local kcp binaries...${NC}"
   run_quiet make -C "$KCP_DIR" build || return 1
@@ -345,6 +516,10 @@ setup_kcp() {
       return 1
     fi
   done
+  if ! verify_kcp_runtime; then
+    log_error "Error: built kcp runtime failed verification: ${KCP_VERIFY_ERROR}."
+    return 1
+  fi
   log_info "${GREEN}kcp ${KCP_RELEASE} binaries are available in ${KCP_BIN_DIR}.${NC}"
 }
 
@@ -859,7 +1034,6 @@ status_resource_count() {
 
 show_status() {
   local context server workspace projects shoots seeds cloudprofiles
-  local checkout_commit checkout_mode
 
   printf 'Gardenerless status (read-only)\n'
   status_line "Runtime directory:" "$KCP_DIR"
@@ -870,19 +1044,10 @@ show_status() {
   fi
   status_line "Expected kcp release:" "$KCP_RELEASE"
   status_line "Expected kcp commit:" "$KCP_COMMIT"
-  if checkout_commit=$(git -C "$KCP_DIR" rev-parse --verify HEAD 2>/dev/null); then
-    if git -C "$KCP_DIR" symbolic-ref -q HEAD >/dev/null 2>&1; then
-      checkout_mode="attached"
-    else
-      checkout_mode="detached"
-    fi
-    if [[ "$checkout_commit" == "$KCP_COMMIT" && "$checkout_mode" == "detached" ]]; then
-      status_line "kcp source provenance:" "verified (${checkout_mode} ${checkout_commit})"
-    else
-      status_line "kcp source provenance:" "mismatch (${checkout_mode} ${checkout_commit})"
-    fi
+  if verify_kcp_checkout; then
+    status_line "kcp source provenance:" "verified (detached ${KCP_VERIFIED_COMMIT})"
   else
-    status_line "kcp source provenance:" "unavailable"
+    status_line "kcp source provenance:" "${KCP_VERIFY_STATUS} (${KCP_VERIFY_ERROR})"
   fi
 
   status_line "Prerequisites:" ""
@@ -1000,6 +1165,10 @@ Commands:
 
   ${GREEN}status${NC}
       Read-only local runtime, guarded API, and demo-resource status
+
+  ${GREEN}verify-kcp${NC}
+      ${YELLOW}--format=json${NC}
+      Verify the selected kcp checkout and binary; print schema-versioned JSON
 
   ${GREEN}create-demo-workspaces${NC}
       Build demo workspaces (animals/plants/cars)
@@ -1134,6 +1303,14 @@ case "$COMMAND" in
 
   status)
     show_status
+    ;;
+
+  verify-kcp)
+    if [[ $# -ne 1 || "$1" != "--format=json" ]]; then
+      log_error "Error: verify-kcp requires exactly '--format=json'."
+      exit 1
+    fi
+    verify_kcp_json
     ;;
 
   create-demo-workspaces)

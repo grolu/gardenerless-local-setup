@@ -75,8 +75,32 @@ set +a
 test "$(git -C "${GARDENERLESS_KCP_DIR:-./kcp}" rev-parse HEAD)" = "$KCP_COMMIT"
 ```
 
-`status` also reports the expected release and commit and whether the local
-source is a matching detached checkout. Renovate is configured in
+For automation, verify the complete selected runtime without contacting
+Kubernetes or reading a kubeconfig:
+
+```bash
+./gardenerless-setup.sh verify-kcp --format=json
+```
+
+On success, stdout is exactly one JSON object (plus its terminating newline)
+with this compatibility contract:
+
+```json
+{"schemaVersion":1,"release":"vX.Y.Z","commit":"<40-character lowercase Git commit>"}
+```
+
+`schemaVersion` is the schema compatibility discriminator; consumers should
+require `1` and use `release` and `commit` as shown. The command exits zero only
+when the selected directory is a clean, detached Git worktree at its own root,
+its HEAD matches the declared commit, and its regular, non-symlinked executable
+`bin/kcp` contains exactly one matching Go `vcs.revision`. Only Gardenerless's
+`.kcp/` runtime state and `bin/` build outputs are allowed checkout drift.
+Failures write an actionable diagnostic to stderr and leave stdout empty. The
+command is strictly read-only: it does not fetch, build, clean, contact an API,
+or inspect kubeconfig state.
+
+Human-readable `status` reports the same expected release and commit and uses
+the shared checkout verification rules. Renovate is configured in
 [`renovate.json`](renovate.json) to update the release and its commit digest
 together; review those updates normally and let `setup-kcp` perform the same
 verification before building.
@@ -194,6 +218,7 @@ selection or resource access. `--workspace` selects a workspace directly under
 | `setup-kcp` | Fetch the pinned, verified kcp release and build its local binary and plugins. |
 | `start-kcp` | Start the local kcp server in the foreground. |
 | `status` | Read-only local runtime and guarded fixture status. |
+| `verify-kcp --format=json` | Verify checkout and binary provenance; emit stable schema-versioned JSON without API access. |
 | `ensure-single-demo-workspace` | Create only missing baseline fixture resources. |
 | `scenario <name>` | Apply `healthy-shoot`, `failing-shoot`, `many-shoots`, or `operation-in-progress`. |
 | `dashboard-kubeconfigs` | Print local generated dashboard-kubeconfig paths; no API request. |
@@ -223,9 +248,10 @@ For script changes, run the fixture-only guard suite:
 ```bash
 bash tests/gardenerless-setup-guard-test.sh
 bash tests/setup-kcp-test.sh
+bash tests/verify-kcp-test.sh
 ```
 
 The guard suite supplies temporary kubeconfigs, certificates, process stubs,
-and a kubectl stub. The setup suite stubs git and make while asserting the exact
-pinned workflow. Neither suite contacts a running kcp server or any external
-API.
+and a kubectl stub. The setup and verification suites stub local tools while
+asserting the exact pinned workflow, provenance failures, and read-only command
+boundary. None of the suites contacts a running kcp server or external API.
