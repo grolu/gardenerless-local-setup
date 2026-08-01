@@ -11,6 +11,7 @@ RUNTIME_DIR="${TEST_TMP}/runtime"
 STATE_DIR="${RUNTIME_DIR}/.kcp"
 STUB_BIN="${TEST_TMP}/bin"
 KUBECTL_LOG="${TEST_TMP}/kubectl.log"
+WORKSPACE_PLUGIN_LOG="${TEST_TMP}/workspace-plugin.log"
 PROCESS_LOG="${TEST_TMP}/process.log"
 COMMAND_OUTPUT="${TEST_TMP}/command.out"
 ADMIN_KUBECONFIG="${STATE_DIR}/admin.kubeconfig"
@@ -68,6 +69,7 @@ run_setup() {
     PATH="${STUB_BIN}:$PATH" \
     GARDENERLESS_KCP_DIR="$RUNTIME_DIR" \
     KUBECTL_LOG="$KUBECTL_LOG" \
+    WORKSPACE_PLUGIN_LOG="$WORKSPACE_PLUGIN_LOG" \
     PROCESS_LOG="$PROCESS_LOG" \
     STUB_PROCESS_STATE="${STUB_PROCESS_STATE:-stopped}" \
     STUB_API_READY="${STUB_API_READY:-ready}" \
@@ -77,6 +79,7 @@ run_setup() {
     STUB_EXISTING_CRD_NAMES="${STUB_EXISTING_CRD_NAMES-__inherit__}" \
     STUB_CRD_GET_FAILURE="${STUB_CRD_GET_FAILURE:-}" \
     STUB_DASHBOARD_KUBECONFIG="$CANONICAL_DASHBOARD_KUBECONFIG" \
+    STUB_KUBECTL_BINARY="${STUB_BIN}/kubectl" \
     STUB_CERT_FILE="$RUNTIME_CERT" \
     STUB_SERVER="${STUB_SERVER_OVERRIDE:-$VALID_SERVER}" \
     STUB_SERVER_AFTER_CONTEXT_CHANGE="${STUB_SERVER_AFTER_CONTEXT_CHANGE:-}" \
@@ -118,6 +121,7 @@ done
 
 mkdir -p "$STATE_DIR" "$STUB_BIN"
 mkdir -p "${RUNTIME_DIR}/bin"
+: >"$WORKSPACE_PLUGIN_LOG"
 
 cat >"${TEST_TMP}/openssl.cnf" <<'EOF'
 [req]
@@ -275,6 +279,17 @@ fi
 EOF
 chmod +x "${STUB_BIN}/kubectl"
 
+cat >"${RUNTIME_DIR}/bin/kubectl-ws" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+
+printf 'runtime-plugin|args=' >>"$WORKSPACE_PLUGIN_LOG"
+printf '<%s>' "$@" >>"$WORKSPACE_PLUGIN_LOG"
+printf '\n' >>"$WORKSPACE_PLUGIN_LOG"
+exec "$STUB_KUBECTL_BINARY" ws "$@"
+EOF
+chmod +x "${RUNTIME_DIR}/bin/kubectl-ws"
+
 cat >"${STUB_BIN}/pgrep" <<'EOF'
 #!/bin/bash
 set -euo pipefail
@@ -355,7 +370,10 @@ mv "${ADMIN_KUBECONFIG}.before-context-test" "$ADMIN_KUBECONFIG"
 # A valid command dispatch uses only the canonical asserted kubeconfig for
 # workspace selection and the final API request, ignoring ambient KUBECONFIG.
 : >"$KUBECTL_LOG"
+: >"$WORKSPACE_PLUGIN_LOG"
 run_setup --workspace guarded get-token >"$COMMAND_OUTPUT" 2>&1
+grep -q '^runtime-plugin|' "$WORKSPACE_PLUGIN_LOG" \
+  || fail "workspace selection did not invoke the runtime plugin by explicit path"
 grep -q '^api|.*<ws>' "$KUBECTL_LOG" || fail "valid workspace selection did not run"
 grep -q '^api|.*<create><token>' "$KUBECTL_LOG" || fail "valid get-token dispatch did not run"
 grep -q "^api|.*<ws><--kubeconfig=${CANONICAL_ADMIN_KUBECONFIG}><:root>" "$KUBECTL_LOG" \

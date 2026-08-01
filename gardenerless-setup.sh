@@ -32,12 +32,12 @@ KCP_DIR="${GARDENERLESS_KCP_DIR:-${SCRIPT_DIR}/kcp}"
 KCP_STATE_DIR="${KCP_DIR}/.kcp"
 KCP_BIN_DIR="${KCP_DIR}/bin"
 KCP_BINARY="${KCP_BIN_DIR}/kcp"
+KCP_KUBECTL_KCP_BINARY="${KCP_BIN_DIR}/kubectl-kcp"
+KCP_KUBECTL_WS_BINARY="${KCP_BIN_DIR}/kubectl-ws"
 KCP_KUBECONFIG="${KCP_STATE_DIR}/admin.kubeconfig"
 dashboard_kcp_cfg="${KCP_STATE_DIR}/dashboard-kcp.kubeconfig"
 dashboard_single_cfg="${KCP_STATE_DIR}/dashboard.kubeconfig"
 ACTIVE_GARDENERLESS_KUBECONFIG=""
-PATH="${KCP_BIN_DIR}:${PATH}"
-export PATH
 
 # quiet / silent wrappers
 run_quiet()  { "$@" >/dev/null; }
@@ -892,7 +892,7 @@ show_status() {
   status_command_prerequisite "  kubectl:" kubectl
   status_command_prerequisite "  yq:" yq
   status_command_prerequisite "  openssl:" openssl
-  if command -v kubectl-ws >/dev/null 2>&1 || command -v kubectl-kcp >/dev/null 2>&1; then
+  if [[ -x "$KCP_KUBECTL_WS_BINARY" || -x "$KCP_KUBECTL_KCP_BINARY" ]]; then
     status_line "  kubectl workspace plugin:" "available"
   else
     status_line "  kubectl workspace plugin:" "missing"
@@ -1070,7 +1070,7 @@ set -- "${ARGS[@]}"
 if [[ $# -lt 1 ]]; then show_help; fi
 COMMAND="$1"; shift
 
-# 3) Guard API-facing commands before applying any global workspace
+# 3) Guard API-facing commands before applying any global workspace.
 if command_contacts_kubernetes_api "$COMMAND"; then
   # status reports local diagnostics before attempting validation and never
   # changes workspaces, even when a global --workspace option was supplied.
