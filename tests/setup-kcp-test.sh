@@ -13,6 +13,7 @@ BAD_RUNTIME_DIR="${TEST_TMP}/bad-runtime"
 GIT_LOG="${TEST_TMP}/git.log"
 MAKE_LOG="${TEST_TMP}/make.log"
 GO_LOG="${TEST_TMP}/go.log"
+RUNTIME_BIN_TRAP_LOG="${TEST_TMP}/runtime-bin-trap.log"
 COMMAND_OUTPUT="${TEST_TMP}/command.out"
 STATE_MARKER="${RUNTIME_DIR}/.kcp/runtime-state"
 EXPECTED_RELEASE="v0.32.3"
@@ -31,6 +32,15 @@ assert_log_line() {
   grep -Fxq "$expected" "$log_file" || fail "$description"
 }
 
+assert_runtime_bin_traps_unused() {
+  local command_name="$1"
+
+  if [[ -s "$RUNTIME_BIN_TRAP_LOG" ]]; then
+    cat "$RUNTIME_BIN_TRAP_LOG" >&2
+    fail "${command_name} resolved a tool from the runtime bin directory"
+  fi
+}
+
 # The checked-in dotenv file is the machine-readable source of truth consumed
 # by setup-kcp and downstream provenance checks.
 # shellcheck source=kcp-version.env
@@ -42,11 +52,23 @@ source "$KCP_PROVENANCE_FILE"
 [[ "$KCP_REPO" == "$EXPECTED_REPO" ]] \
   || fail "unexpected KCP_REPO in kcp-version.env"
 
-mkdir -p "$STUB_BIN" "${RUNTIME_DIR}/.kcp"
+mkdir -p "$STUB_BIN" "${RUNTIME_DIR}/.kcp" "${RUNTIME_DIR}/bin"
 printf 'preserve me\n' >"$STATE_MARKER"
 : >"$GIT_LOG"
 : >"$MAKE_LOG"
 : >"$GO_LOG"
+: >"$RUNTIME_BIN_TRAP_LOG"
+
+for binary in git make; do
+  cat >"${RUNTIME_DIR}/bin/${binary}" <<'EOF'
+#!/bin/bash
+tool="${0##*/}"
+printf '%s\n' "$tool" >>"$KCP_RUNTIME_BIN_TRAP_LOG"
+printf 'runtime-bin %s trap executed\n' "$tool" >&2
+exit 97
+EOF
+  chmod +x "${RUNTIME_DIR}/bin/${binary}"
+done
 
 cat >"${STUB_BIN}/git" <<'EOF'
 #!/bin/bash
@@ -175,6 +197,7 @@ run_setup_kcp() {
     KCP_GIT_LOG="$GIT_LOG" \
     KCP_MAKE_LOG="$MAKE_LOG" \
     KCP_GO_LOG="$GO_LOG" \
+    KCP_RUNTIME_BIN_TRAP_LOG="$RUNTIME_BIN_TRAP_LOG" \
     KCP_EXPECTED_COMMIT="$EXPECTED_COMMIT" \
     STUB_PEELED_COMMIT="${STUB_PEELED_COMMIT:-}" \
     STUB_TAG_COMMIT="${STUB_TAG_COMMIT:-}" \
@@ -186,6 +209,7 @@ if ! run_setup_kcp "$RUNTIME_DIR" >"$COMMAND_OUTPUT" 2>&1; then
   cat "$GIT_LOG" >&2
   fail "initial setup-kcp run failed"
 fi
+assert_runtime_bin_traps_unused setup-kcp
 
 [[ "$(cat "$STATE_MARKER")" == "preserve me" ]] \
   || fail "setup-kcp did not preserve existing .kcp runtime state"
@@ -231,6 +255,7 @@ if ! run_setup_kcp "$RUNTIME_DIR" >"$COMMAND_OUTPUT" 2>&1; then
   cat "$COMMAND_OUTPUT" >&2
   fail "repeated setup-kcp run failed"
 fi
+assert_runtime_bin_traps_unused setup-kcp
 [[ "$(cat "$STATE_MARKER")" == "preserve me" ]] \
   || fail "repeated setup-kcp did not preserve .kcp runtime state"
 [[ "$(grep -Fc "git|-C|${RUNTIME_DIR}|fetch|--force|--depth=1|--no-tags|origin|refs/tags/${EXPECTED_RELEASE}:refs/tags/${EXPECTED_RELEASE}" "$GIT_LOG")" -eq 2 ]] \
@@ -258,6 +283,7 @@ grep -Eq "^Expected kcp commit:[[:space:]]+${EXPECTED_COMMIT}$" "$COMMAND_OUTPUT
   || fail "status did not expose the expected kcp commit"
 grep -Eq "^kcp source provenance:[[:space:]]+verified \\(detached ${EXPECTED_COMMIT}\\)$" "$COMMAND_OUTPUT" \
   || fail "status did not verify the detached kcp checkout"
+assert_runtime_bin_traps_unused status
 
 # A tag that does not peel to the manifest commit is rejected before checkout
 # or build.

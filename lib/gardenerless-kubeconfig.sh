@@ -302,9 +302,9 @@ guarded_kubeconfig_cache_matches() {
      "$cert_digest" == "$GUARDED_KUBECTL_RUNTIME_CERT_DIGEST" ]]
 }
 
-# Invoke kubectl with both explicit guarded kubeconfig mechanisms. Kubectl
-# plugins receive global-looking flags only after the plugin name; otherwise
-# kubectl core rejects the invocation before dispatching the plugin.
+# Invoke kubectl with both explicit guarded kubeconfig mechanisms. Callers can
+# select an absolute kubectl-ws binary so its containing directory does not
+# need to be exposed through PATH.
 invoke_guarded_kubectl() {
   local canonical_kubeconfig="${1:-}"
 
@@ -316,8 +316,18 @@ invoke_guarded_kubectl() {
 
   if [[ "$1" == "ws" ]]; then
     shift
-    KUBECONFIG="$canonical_kubeconfig" \
-      command kubectl ws --kubeconfig="$canonical_kubeconfig" "$@"
+    if [[ -n "${KCP_KUBECTL_WS_BINARY:-}" ]]; then
+      if [[ ! -x "$KCP_KUBECTL_WS_BINARY" ]]; then
+        log_error "Error: kubectl workspace plugin '$KCP_KUBECTL_WS_BINARY' is missing or not executable."
+        return 1
+      fi
+      KUBECONFIG="$canonical_kubeconfig" \
+        command "$KCP_KUBECTL_WS_BINARY" --kubeconfig="$canonical_kubeconfig" "$@"
+    else
+      # Generic callers can continue using kubectl's standard plugin lookup.
+      KUBECONFIG="$canonical_kubeconfig" \
+        command kubectl ws --kubeconfig="$canonical_kubeconfig" "$@"
+    fi
   else
     KUBECONFIG="$canonical_kubeconfig" \
       command kubectl --kubeconfig="$canonical_kubeconfig" "$@"
