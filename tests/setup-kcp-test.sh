@@ -7,9 +7,13 @@ KCP_PROVENANCE_FILE="${SCRIPT_DIR}/kcp-version.env"
 TEST_TMP="$(mktemp -d "${TMPDIR:-/tmp}/gardenerless-setup-kcp-test.XXXXXX")"
 trap 'rm -rf "$TEST_TMP"' EXIT
 
+REAL_GIT="$(command -v git)"
 STUB_BIN="${TEST_TMP}/bin"
 RUNTIME_DIR="${TEST_TMP}/runtime"
 BAD_RUNTIME_DIR="${TEST_TMP}/bad-runtime"
+NESTED_PARENT_DIR="${TEST_TMP}/enclosing-worktree"
+NESTED_RUNTIME_DIR="${NESTED_PARENT_DIR}/nested-runtime"
+UNSAFE_RUNTIME_DIR="${NESTED_PARENT_DIR}/unsafe-runtime"
 GIT_LOG="${TEST_TMP}/git.log"
 MAKE_LOG="${TEST_TMP}/make.log"
 GO_LOG="${TEST_TMP}/go.log"
@@ -52,7 +56,7 @@ source "$KCP_PROVENANCE_FILE"
 [[ "$KCP_REPO" == "$EXPECTED_REPO" ]] \
   || fail "unexpected KCP_REPO in kcp-version.env"
 
-mkdir -p "$STUB_BIN" "${RUNTIME_DIR}/.kcp" "${RUNTIME_DIR}/bin"
+mkdir -p "$STUB_BIN" "${RUNTIME_DIR}/.git" "${RUNTIME_DIR}/.kcp" "${RUNTIME_DIR}/bin"
 printf 'preserve me\n' >"$STATE_MARKER"
 : >"$GIT_LOG"
 : >"$MAKE_LOG"
@@ -96,10 +100,20 @@ case "$command_name" in
   rev-parse)
     case "${1:-}:${2:-}" in
       --is-inside-work-tree:)
-        printf 'true\n'
+        if [[ -n "${KCP_USE_REAL_REPOSITORY_LAYOUT:-}" ]]; then
+          "$KCP_REAL_GIT" -C "$repo" rev-parse --is-inside-work-tree
+        elif [[ -d "${repo}/.git" ]]; then
+          printf 'true\n'
+        else
+          exit 1
+        fi
         ;;
       --show-toplevel:)
-        printf '%s\n' "$repo"
+        if [[ -n "${KCP_USE_REAL_REPOSITORY_LAYOUT:-}" ]]; then
+          "$KCP_REAL_GIT" -C "$repo" rev-parse --show-toplevel
+        else
+          printf '%s\n' "$repo"
+        fi
         ;;
       --git-dir:)
         if [[ ! -d "${repo}/.git" ]]; then
@@ -131,7 +145,11 @@ case "$command_name" in
     printf '!! .kcp/\n!! bin/kcp\n'
     ;;
   init)
-    mkdir -p "${repo}/.git"
+    if [[ -n "${KCP_USE_REAL_REPOSITORY_LAYOUT:-}" ]]; then
+      "$KCP_REAL_GIT" -C "$repo" init --quiet
+    else
+      mkdir -p "${repo}/.git"
+    fi
     ;;
   remote)
     case "${1:-}:${2:-}" in
@@ -215,6 +233,8 @@ run_setup_kcp() {
     KCP_MAKE_LOG="$MAKE_LOG" \
     KCP_GO_LOG="$GO_LOG" \
     KCP_RUNTIME_BIN_TRAP_LOG="$RUNTIME_BIN_TRAP_LOG" \
+    KCP_REAL_GIT="$REAL_GIT" \
+    KCP_USE_REAL_REPOSITORY_LAYOUT="${KCP_USE_REAL_REPOSITORY_LAYOUT:-}" \
     KCP_EXPECTED_COMMIT="$EXPECTED_COMMIT" \
     STUB_TAG_COMMIT="${STUB_TAG_COMMIT:-}" \
     "$GARDENERLESS_SETUP" setup-kcp
@@ -284,6 +304,71 @@ assert_log_line \
 [[ "$(cat "${RUNTIME_DIR}/.git/origin")" == "$EXPECTED_REPO" ]] \
   || fail "repeated setup-kcp left the wrong origin configured"
 
+# A fresh empty runtime nested in another worktree must become its own
+# repository without changing any enclosing-repository state.
+mkdir -p "$NESTED_PARENT_DIR"
+"$REAL_GIT" -C "$NESTED_PARENT_DIR" init --quiet
+"$REAL_GIT" -C "$NESTED_PARENT_DIR" config user.name 'Setup KCP Test'
+"$REAL_GIT" -C "$NESTED_PARENT_DIR" config user.email 'setup-kcp-test@example.invalid'
+"$REAL_GIT" -C "$NESTED_PARENT_DIR" config gardenerless.test-marker 'preserve parent config'
+printf 'nested-runtime/\nunsafe-runtime/\n' >"${NESTED_PARENT_DIR}/.gitignore"
+printf 'parent fixture\n' >"${NESTED_PARENT_DIR}/fixture"
+"$REAL_GIT" -C "$NESTED_PARENT_DIR" add .gitignore fixture
+"$REAL_GIT" -c commit.gpgsign=false -C "$NESTED_PARENT_DIR" commit --quiet -m 'Create enclosing fixture'
+"$REAL_GIT" -C "$NESTED_PARENT_DIR" remote add enclosing https://example.invalid/enclosing.git
+
+parent_head_before=$("$REAL_GIT" -C "$NESTED_PARENT_DIR" rev-parse HEAD)
+parent_status_before=$("$REAL_GIT" -C "$NESTED_PARENT_DIR" status --porcelain=v1 --untracked-files=all)
+parent_remotes_before=$("$REAL_GIT" -C "$NESTED_PARENT_DIR" remote -v)
+parent_config_before=$("$REAL_GIT" -C "$NESTED_PARENT_DIR" config --local --list)
+
+if ! KCP_USE_REAL_REPOSITORY_LAYOUT=1 \
+    run_setup_kcp "$NESTED_RUNTIME_DIR" >"$COMMAND_OUTPUT" 2>&1; then
+  cat "$COMMAND_OUTPUT" >&2
+  fail "setup-kcp rejected a fresh runtime nested in another worktree"
+fi
+assert_log_line \
+  "git|-C|${NESTED_RUNTIME_DIR}|init" \
+  "$GIT_LOG" \
+  "setup-kcp did not initialize the nested runtime"
+nested_runtime_root=$("$REAL_GIT" -C "$NESTED_RUNTIME_DIR" rev-parse --show-toplevel)
+[[ "$nested_runtime_root" == "$(cd -- "$NESTED_RUNTIME_DIR" && pwd -P)" ]] \
+  || fail "nested runtime was not initialized at its selected worktree root"
+if ! KCP_USE_REAL_REPOSITORY_LAYOUT=1 \
+    run_setup_kcp "$NESTED_RUNTIME_DIR" >"$COMMAND_OUTPUT" 2>&1; then
+  cat "$COMMAND_OUTPUT" >&2
+  fail "repeated setup-kcp rejected the valid nested repository"
+fi
+[[ "$(grep -Fc "git|-C|${NESTED_RUNTIME_DIR}|init" "$GIT_LOG")" -eq 1 ]] \
+  || fail "repeated setup-kcp reinitialized the valid nested repository"
+
+# A non-empty directory that merely inherits the enclosing worktree is unsafe:
+# refuse it before repository initialization or any mutating Git workflow.
+mkdir -p "$UNSAFE_RUNTIME_DIR"
+printf 'must not be taken over\n' >"${UNSAFE_RUNTIME_DIR}/existing-data"
+unsafe_git_lines_before=$(wc -l <"$GIT_LOG" | tr -d ' ')
+if KCP_USE_REAL_REPOSITORY_LAYOUT=1 \
+    run_setup_kcp "$UNSAFE_RUNTIME_DIR" >"$COMMAND_OUTPUT" 2>&1; then
+  fail "setup-kcp accepted a non-empty mismatched worktree layout"
+fi
+grep -Fq "is not the Git worktree root" "$COMMAND_OUTPUT" \
+  || fail "setup-kcp did not explain the unsafe worktree-root mismatch"
+if tail -n "+$((unsafe_git_lines_before + 1))" "$GIT_LOG" \
+    | grep -Eq '\|(init|remote|fetch|checkout|clean)(\||$)'; then
+  fail "setup-kcp mutated an unsafe mismatched worktree layout"
+fi
+[[ "$(cat "${UNSAFE_RUNTIME_DIR}/existing-data")" == "must not be taken over" ]] \
+  || fail "setup-kcp changed existing data in the unsafe runtime"
+
+[[ "$("$REAL_GIT" -C "$NESTED_PARENT_DIR" rev-parse HEAD)" == "$parent_head_before" ]] \
+  || fail "setup-kcp changed the enclosing repository HEAD"
+[[ "$("$REAL_GIT" -C "$NESTED_PARENT_DIR" status --porcelain=v1 --untracked-files=all)" == "$parent_status_before" ]] \
+  || fail "setup-kcp changed the enclosing repository status"
+[[ "$("$REAL_GIT" -C "$NESTED_PARENT_DIR" remote -v)" == "$parent_remotes_before" ]] \
+  || fail "setup-kcp changed the enclosing repository remotes"
+[[ "$("$REAL_GIT" -C "$NESTED_PARENT_DIR" config --local --list)" == "$parent_config_before" ]] \
+  || fail "setup-kcp changed the enclosing repository configuration"
+
 # Read-only diagnostics expose the same expected provenance and verify the
 # detached checkout for humans and automation inspecting setup output.
 env \
@@ -315,4 +400,4 @@ if tail -n "+$((git_lines_before + 1))" "$GIT_LOG" | grep -Fq '|checkout|'; then
   fail "setup-kcp checked out a mismatched tag commit"
 fi
 
-printf 'PASS: setup-kcp is pinned, local, idempotent, and preserves runtime state\n'
+printf 'PASS: setup-kcp is pinned, local, idempotent, nested-safe, and preserves runtime state\n'

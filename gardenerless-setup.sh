@@ -320,6 +320,40 @@ verify_kcp_worktree_root() {
   fi
 }
 
+kcp_runtime_directory_is_empty() {
+  local first_entry
+
+  if ! first_entry=$(find "$KCP_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null); then
+    return 1
+  fi
+  [[ -z "$first_entry" ]]
+}
+
+ensure_kcp_repository_root() {
+  local verification_error
+
+  if verify_kcp_worktree_root; then
+    return 0
+  fi
+  verification_error="$KCP_VERIFY_ERROR"
+
+  # An empty target can safely become a nested repository even when Git finds
+  # metadata in an enclosing worktree. Existing contents or local Git metadata
+  # require an exact-root repository and must never be taken over implicitly.
+  if ! kcp_runtime_directory_is_empty; then
+    log_error "Error: refusing unsafe kcp checkout: ${verification_error}."
+    return 1
+  fi
+
+  log_info "${YELLOW}Initializing the repository-local kcp checkout...${NC}"
+  run_quiet git -C "$KCP_DIR" init || return 1
+
+  if ! verify_kcp_worktree_root; then
+    log_error "Error: refusing unsafe kcp checkout: ${KCP_VERIFY_ERROR}."
+    return 1
+  fi
+}
+
 verify_kcp_checkout() {
   local checkout_commit checkout_state checkout_line symbolic_ref_status
 
@@ -447,14 +481,7 @@ setup_kcp() {
     return 1
   fi
 
-  if ! run_silent git -C "$KCP_DIR" rev-parse --git-dir; then
-    log_info "${YELLOW}Initializing the repository-local kcp checkout...${NC}"
-    run_quiet git -C "$KCP_DIR" init || return 1
-  fi
-  if ! verify_kcp_worktree_root; then
-    log_error "Error: refusing unsafe kcp checkout: ${KCP_VERIFY_ERROR}."
-    return 1
-  fi
+  ensure_kcp_repository_root || return 1
 
   if origin_url=$(git -C "$KCP_DIR" remote get-url origin 2>/dev/null); then
     if [[ "$origin_url" != "$KCP_REPO" ]]; then
