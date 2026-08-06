@@ -41,8 +41,11 @@ assert_api_calls_use_guarded_kubeconfig() {
     if [[ "$api_call" == *"|kubeconfig=${CANONICAL_DASHBOARD_KUBECONFIG}|"* ]]; then
       [[ "$api_call" == *"|env=${CANONICAL_DASHBOARD_KUBECONFIG}|"* ]] \
         || fail "$description dashboard capability call did not receive canonical KUBECONFIG: $api_call"
-      [[ "$api_call" == *"<get><projects.core.gardener.cloud><-o><name>"* ]] \
-        || fail "$description used the dashboard kubeconfig outside its Projects capability probe: $api_call"
+      if [[ "$api_call" == *"<get>"* && "$api_call" == *"<-o><name>"* ]]; then
+        : # Projects usability probe or Dashboard API warm-up / parallel gate
+      else
+        fail "$description used the dashboard kubeconfig outside Projects probe or warm-up: $api_call"
+      fi
     else
       [[ "$api_call" == *"|env=${CANONICAL_ADMIN_KUBECONFIG}|"* ]] \
         || fail "$description API call did not receive canonical KUBECONFIG: $api_call"
@@ -75,6 +78,8 @@ run_setup() {
     STUB_API_READY="${STUB_API_READY:-ready}" \
     STUB_DEMO_STATE="${STUB_DEMO_STATE:-}" \
     STUB_DASHBOARD_PROJECTS_ACCESS="${STUB_DASHBOARD_PROJECTS_ACCESS:-ready}" \
+    STUB_DASHBOARD_WARM_ACCESS="${STUB_DASHBOARD_WARM_ACCESS:-ready}" \
+    GARDENERLESS_DASHBOARD_WARM_TIMEOUT_SECONDS="${GARDENERLESS_DASHBOARD_WARM_TIMEOUT_SECONDS:-60}" \
     STUB_ROOT_SWITCH="${STUB_ROOT_SWITCH:-ready}" \
     STUB_EXISTING_CRD_NAMES="${STUB_EXISTING_CRD_NAMES-__inherit__}" \
     STUB_CRD_GET_FAILURE="${STUB_CRD_GET_FAILURE:-}" \
@@ -248,7 +253,18 @@ elif [[ "${STUB_API_READY:-ready}" != "ready" ]]; then
   exit 1
 elif [[ "${STUB_DASHBOARD_PROJECTS_ACCESS:-ready}" != "ready" && \
         "$kubeconfig" == "$STUB_DASHBOARD_KUBECONFIG" && \
+        "$forwarded_string" == *" --request-timeout=5s "* && \
         "$forwarded_string" == *" get projects.core.gardener.cloud -o name "* ]]; then
+  # Only the usability probe uses a 5s timeout. Warm-up lists use 10s and must
+  # still succeed after the kubeconfig is refreshed.
+  exit 1
+elif [[ "${STUB_DASHBOARD_WARM_ACCESS:-ready}" != "ready" && \
+        "$kubeconfig" == "$STUB_DASHBOARD_KUBECONFIG" && \
+        "$forwarded_string" == *" get "* && \
+        "$forwarded_string" == *" -o name "* && \
+        "$forwarded_string" == *" --request-timeout=10s "* ]]; then
+  # Warm-up / parallel gate lists use a 10s request timeout; the Projects
+  # usability probe keeps its 5s timeout and is controlled separately.
   exit 1
 elif [[ "${STUB_ROOT_SWITCH:-ready}" != "ready" && \
         "$forwarded_string" == *" ws :root "* ]]; then
@@ -753,6 +769,16 @@ managed_seed_apply_count="$(
 STUB_DEMO_STATE=healthy run_setup ensure-single-demo-workspace >"$COMMAND_OUTPUT" 2>&1
 grep -Fq 'single demo is ready' "$COMMAND_OUTPUT" \
   || fail "ensure-single-demo-workspace did not report a healthy existing demo"
+grep -Fq 'Warming Dashboard API resources before ready' "$COMMAND_OUTPUT" \
+  || fail "ensure-single-demo-workspace did not warm Dashboard API resources"
+grep -Fq 'Dashboard API resources are warm' "$COMMAND_OUTPUT" \
+  || fail "ensure-single-demo-workspace did not report successful Dashboard API warm-up"
+grep -Fq "api|env=${CANONICAL_DASHBOARD_KUBECONFIG}|kubeconfig=${CANONICAL_DASHBOARD_KUBECONFIG}|args=<--kubeconfig=${CANONICAL_DASHBOARD_KUBECONFIG}><--request-timeout=10s><get><credentialsbindings.security.gardener.cloud><-A><-o><name>" "$KUBECTL_LOG" \
+  || fail "ensure-single-demo-workspace did not warm credentialsbindings via the dashboard kubeconfig"
+grep -Fq "api|env=${CANONICAL_DASHBOARD_KUBECONFIG}|kubeconfig=${CANONICAL_DASHBOARD_KUBECONFIG}|args=<--kubeconfig=${CANONICAL_DASHBOARD_KUBECONFIG}><--request-timeout=10s><get><workloadidentities.security.gardener.cloud><-A><-o><name>" "$KUBECTL_LOG" \
+  || fail "ensure-single-demo-workspace did not warm workloadidentities via the dashboard kubeconfig"
+grep -Fq "api|env=${CANONICAL_DASHBOARD_KUBECONFIG}|kubeconfig=${CANONICAL_DASHBOARD_KUBECONFIG}|args=<--kubeconfig=${CANONICAL_DASHBOARD_KUBECONFIG}><--request-timeout=10s><get><credentialsbindings.security.gardener.cloud><-n><garden><-o><name>" "$KUBECTL_LOG" \
+  || fail "ensure-single-demo-workspace did not run the credentialsbindings warm-up gate"
 grep -q '^api|.*<get>' "$KUBECTL_LOG" \
   || fail "ensure-single-demo-workspace did not inspect the existing demo"
 if grep -Eq '^api\|.*<(apply|create|patch|delete|replace|edit|label|set)>' "$KUBECTL_LOG"; then
@@ -760,6 +786,19 @@ if grep -Eq '^api\|.*<(apply|create|patch|delete|replace|edit|label|set)>' "$KUB
 fi
 if grep -q '^api|.*<wait><--for=condition=Established>' "$KUBECTL_LOG"; then
   fail "ensure-single-demo-workspace waited for CRDs that were already present"
+fi
+
+# Persistent warm-up list failures must keep the demo from being declared ready.
+: >"$KUBECTL_LOG"
+if GARDENERLESS_DASHBOARD_WARM_TIMEOUT_SECONDS=0 \
+    STUB_DEMO_STATE=healthy STUB_DASHBOARD_WARM_ACCESS=unavailable \
+    run_setup ensure-single-demo-workspace >"$COMMAND_OUTPUT" 2>&1; then
+  fail "ensure-single-demo-workspace reported success while Dashboard API warm-up failed"
+fi
+grep -Fq 'timed out warming Dashboard API list' "$COMMAND_OUTPUT" \
+  || fail "ensure-single-demo-workspace did not report a clear Dashboard API warm-up timeout"
+if grep -Fq 'single demo is ready' "$COMMAND_OUTPUT"; then
+  fail "ensure-single-demo-workspace declared ready after Dashboard API warm-up failure"
 fi
 
 # A generated dashboard kubeconfig that can still reach /readyz but cannot list
@@ -776,6 +815,8 @@ if grep -Fq 'stale-dashboard-credential' "$DASHBOARD_KUBECONFIG"; then
 fi
 grep -Fq "api|env=${CANONICAL_DASHBOARD_KUBECONFIG}|kubeconfig=${CANONICAL_DASHBOARD_KUBECONFIG}|args=<--kubeconfig=${CANONICAL_DASHBOARD_KUBECONFIG}><--request-timeout=5s><get><projects.core.gardener.cloud><-o><name>" "$KUBECTL_LOG" \
   || fail "ensure-single-demo-workspace did not test the generated dashboard kubeconfig through its guarded Projects probe"
+grep -Fq "api|env=${CANONICAL_DASHBOARD_KUBECONFIG}|kubeconfig=${CANONICAL_DASHBOARD_KUBECONFIG}|args=<--kubeconfig=${CANONICAL_DASHBOARD_KUBECONFIG}><--request-timeout=10s><get><workloadidentities.security.gardener.cloud><-A><-o><name>" "$KUBECTL_LOG" \
+  || fail "ensure-single-demo-workspace did not warm Dashboard APIs after refreshing the dashboard kubeconfig"
 if grep -Fq "kubeconfig=${CANONICAL_DASHBOARD_KUBECONFIG}|args=<--kubeconfig=${CANONICAL_DASHBOARD_KUBECONFIG}><--request-timeout=5s><get><--raw=/readyz>" "$KUBECTL_LOG"; then
   fail "ensure-single-demo-workspace still treated dashboard /readyz as a sufficient capability check"
 fi

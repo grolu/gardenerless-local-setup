@@ -125,7 +125,11 @@ Create the supported baseline only when needed:
 This creates only missing resources in the local `demo` fixture and leaves
 healthy existing resources unchanged. It reuses a generated Dashboard
 kubeconfig only while that credential can list Gardener Projects, and refreshes
-the generated credential when the capability check fails. The command prints
+the generated credential when the capability check fails. Before declaring the
+demo ready, it warms the Dashboard first-load / early-route API lists
+(including `credentialsbindings` and `workloadidentities`) through that
+kubeconfig and retries until those lists succeed, so cold KCP CRD cachers do
+not return HTTP 429 on the first Dashboard login. The command prints
 the single-workspace dashboard kubeconfig at:
 
 ```text
