@@ -147,6 +147,146 @@ dashboard_kubeconfig_is_usable() {
   return "$result"
 }
 
+# Dashboard first-load / early-route APIs. Listing them once initializes KCP's
+# workspace-scoped /customresources cachers so cold first login does not 429
+# under the Dashboard backend's parallel credential fan-out.
+dashboard_warm_list_specs() {
+  cat <<'EOF'
+projects.core.gardener.cloud
+cloudprofiles.core.gardener.cloud
+seeds.core.gardener.cloud
+controllerregistrations.core.gardener.cloud
+shoots.core.gardener.cloud -A
+secretbindings.core.gardener.cloud -A
+quotas.core.gardener.cloud -A
+credentialsbindings.security.gardener.cloud -A
+workloadidentities.security.gardener.cloud -A
+managedseeds.seedmanagement.gardener.cloud -n garden
+secrets -n garden
+resourcequotas -A
+EOF
+}
+
+# ShootList cloudprovidercredentials Promise.all targets plus sibling
+# first-load lists that share the same cold-cacher failure mode. Used as the
+# post-warm readiness gate.
+dashboard_warm_gate_specs() {
+  cat <<'EOF'
+secretbindings.core.gardener.cloud -n garden
+credentialsbindings.security.gardener.cloud -n garden
+secrets -n garden
+workloadidentities.security.gardener.cloud -n garden
+projects.core.gardener.cloud
+seeds.core.gardener.cloud
+cloudprofiles.core.gardener.cloud
+shoots.core.gardener.cloud -A
+managedseeds.seedmanagement.gardener.cloud -n garden
+EOF
+}
+
+dashboard_warm_get() {
+  # shellcheck disable=SC2206
+  local -a spec_parts=($1)
+
+  active_kubectl --request-timeout=10s get "${spec_parts[@]}" -o name
+}
+
+dashboard_warm_get_silent() {
+  run_silent dashboard_warm_get "$1"
+}
+
+# Retry a single list until it succeeds. Cold CRD cachers often 429 once, then
+# serve subsequent lists in milliseconds.
+wait_for_dashboard_warm_list() {
+  local spec="$1"
+  local deadline="$2"
+  local sleep_seconds=1
+  local now
+
+  while true; do
+    if dashboard_warm_get_silent "$spec"; then
+      return 0
+    fi
+    now=$(date +%s)
+    if (( now >= deadline )); then
+      log_error "Error: timed out warming Dashboard API list: kubectl get ${spec}"
+      return 1
+    fi
+    sleep "$sleep_seconds"
+    if (( sleep_seconds < 8 )); then
+      sleep_seconds=$((sleep_seconds * 2))
+    fi
+  done
+}
+
+# Second pass over the ShootList fan-out set (and sibling first-load lists).
+# Sequential on purpose: concurrent kubectl from this shell raced stub harnesses
+# and is unnecessary once each cacher has been initialized above. Retries until
+# every list succeeds so "ready" is not declared while any target still 429s.
+wait_for_dashboard_warm_gate() {
+  local deadline="$1"
+  local sleep_seconds=1
+  local now spec failed
+
+  while true; do
+    failed=0
+    while IFS= read -r spec; do
+      [[ -n "$spec" ]] || continue
+      if ! dashboard_warm_get_silent "$spec"; then
+        failed=1
+        break
+      fi
+    done < <(dashboard_warm_gate_specs)
+
+    if [[ "$failed" -eq 0 ]]; then
+      return 0
+    fi
+    now=$(date +%s)
+    if (( now >= deadline )); then
+      log_error "Error: timed out on Dashboard API warm-up gate (lists still failing; often HTTP 429 on cold CRDs)."
+      return 1
+    fi
+    sleep "$sleep_seconds"
+    if (( sleep_seconds < 8 )); then
+      sleep_seconds=$((sleep_seconds * 2))
+    fi
+  done
+}
+
+# Idempotent: GET-only. Fails clearly if lists keep returning errors past the
+# timeout. Warm each resource once (retrying 429s), then re-check the
+# Dashboard first-login fan-out set before declaring ready.
+warm_dashboard_apis() {
+  local previous_kubeconfig="$ACTIVE_GARDENERLESS_KUBECONFIG"
+  local timeout_seconds="${GARDENERLESS_DASHBOARD_WARM_TIMEOUT_SECONDS:-60}"
+  local deadline spec
+
+  log_info "${YELLOW}Warming Dashboard API resources before ready...${NC}"
+
+  if ! activate_gardenerless_kubeconfig "$dashboard_single_cfg"; then
+    ACTIVE_GARDENERLESS_KUBECONFIG="$previous_kubeconfig"
+    return 1
+  fi
+
+  deadline=$(( $(date +%s) + timeout_seconds ))
+
+  while IFS= read -r spec; do
+    [[ -n "$spec" ]] || continue
+    if ! wait_for_dashboard_warm_list "$spec" "$deadline"; then
+      ACTIVE_GARDENERLESS_KUBECONFIG="$previous_kubeconfig"
+      return 1
+    fi
+  done < <(dashboard_warm_list_specs)
+
+  if ! wait_for_dashboard_warm_gate "$deadline"; then
+    ACTIVE_GARDENERLESS_KUBECONFIG="$previous_kubeconfig"
+    return 1
+  fi
+
+  ACTIVE_GARDENERLESS_KUBECONFIG="$previous_kubeconfig"
+  log_info "${GREEN}Dashboard API resources are warm.${NC}"
+}
+
 wait_for_crd_established() {
   local crd_name="$1"
 
@@ -927,6 +1067,8 @@ ensure_single_demo() {
   else
     create_kubeconfig "$dashboard_single_cfg" "$workspace" || return 1
   fi
+
+  warm_dashboard_apis || return 1
 
   log_info "${GREEN}single demo is ready; dashboard kubeconfig:${NC} $dashboard_single_cfg"
 }
