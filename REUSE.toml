@@ -1,0 +1,35 @@
+version = 1
+SPDX-PackageName = "gardenerless-local-setup"
+SPDX-PackageDownloadLocation = "https://github.com/grolu/gardenerless-local-setup"
+
+[[annotations]]
+path = "**"
+precedence = "override"
+SPDX-FileCopyrightText = "SAP SE or an SAP affiliate company and Gardener contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "**.md"
+precedence = "override"
+SPDX-FileCopyrightText = "SAP SE or an SAP affiliate company and Gardener contributors"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+[[annotations]]
+path = [
+  "crds/apiservices.apiregistration.k8s.io.yaml",
+  "crds/csidrivers.storage.k8s.io.yaml",
+  "crds/csistoragecapacities.storage.k8s.io.yaml",
+  "crds/flowschemas.flowcontrol.apiserver.k8s.io.yaml",
+  "crds/horizontalpodautoscalers.autoscaling.yaml",
+  "crds/ingressclasses.networking.k8s.io.yaml",
+  "crds/ingresses.networking.k8s.io.yaml",
+  "crds/networkpolicies.networking.k8s.io.yaml",
+  "crds/priorityclasses.scheduling.k8s.io.yaml",
+  "crds/prioritylevelconfigurations.flowcontrol.apiserver.k8s.io.yaml",
+  "crds/runtimeclasses.node.k8s.io.yaml",
+  "crds/storageclasses.storage.k8s.io.yaml",
+  "crds/volumeattachments.storage.k8s.io.yaml"
+]
+precedence = "override"
+SPDX-FileCopyrightText = "The Kubernetes Authors"
+SPDX-License-Identifier = "Apache-2.0"
