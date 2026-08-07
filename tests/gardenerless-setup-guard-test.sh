@@ -111,6 +111,19 @@ assert_rejected_before_api() {
   assert_no_api_calls "rejected kubeconfig reached the API for command: $*"
 }
 
+assert_get_token_option_error() {
+  local expected_error="$1"
+  shift
+
+  : >"$KUBECTL_LOG"
+  if run_setup --workspace guarded get-token "$@" >"$COMMAND_OUTPUT" 2>&1; then
+    fail "invalid get-token options unexpectedly succeeded: $*"
+  fi
+  grep -Fq "$expected_error" "$COMMAND_OUTPUT" \
+    || fail "get-token option error did not report: $expected_error"
+  assert_no_api_calls "invalid get-token options reached the API: $*"
+}
+
 assert_wrapper_override_rejected() {
   : >"$KUBECTL_LOG"
   if run_kubectl_gardenerless "$@" >"$COMMAND_OUTPUT" 2>&1; then
@@ -251,6 +264,8 @@ if "$is_config"; then
   esac
 elif [[ "${STUB_API_READY:-ready}" != "ready" ]]; then
   exit 1
+elif [[ "$forwarded_string" == *" create token "* ]]; then
+  printf 'fixture-token\n'
 elif [[ "${STUB_DASHBOARD_PROJECTS_ACCESS:-ready}" != "ready" && \
         "$kubeconfig" == "$STUB_DASHBOARD_KUBECONFIG" && \
         "$forwarded_string" == *" --request-timeout=5s "* && \
@@ -408,13 +423,38 @@ config_calls_before_api="$(sed -n "1,$((first_api_line - 1))p" "$KUBECTL_LOG" | 
 [[ "$config_calls_before_api" -ge 6 ]] \
   || fail "API dispatch occurred before the shared assertion completed"
 
-# The upstream selectable service-account behavior remains available through
-# the same guarded get-token dispatch.
+# get-token defaults to the garden namespace and dashboard-user account. Its
+# stdout contains only the token returned by kubectl.
 : >"$KUBECTL_LOG"
-run_setup get-token --service-account landscape-viewer >"$COMMAND_OUTPUT" 2>&1
-grep -q '^api|.*<-n><garden><create><token><landscape-viewer><--duration><24h>' "$KUBECTL_LOG" \
-  || fail "get-token did not forward the selected service account"
-assert_api_calls_use_guarded_kubeconfig "selected service-account token"
+run_setup get-token >"$COMMAND_OUTPUT" 2>"${COMMAND_OUTPUT}.err"
+[[ "$(<"$COMMAND_OUTPUT")" == "fixture-token" ]] \
+  || fail "get-token stdout contained output other than the token"
+[[ ! -s "${COMMAND_OUTPUT}.err" ]] || fail "get-token unexpectedly wrote to stderr"
+grep -q '^api|.*<--namespace><garden><create><token><dashboard-user><--duration><24h>' "$KUBECTL_LOG" \
+  || fail "get-token did not use its default namespace and service account"
+assert_api_calls_use_guarded_kubeconfig "default service-account token"
+
+# Namespace and service-account options work in either order, including their
+# short forms, and continue through the same guarded kubectl path.
+: >"$KUBECTL_LOG"
+run_setup get-token --namespace team-a --service-account landscape-viewer >"$COMMAND_OUTPUT" 2>&1
+grep -q '^api|.*<--namespace><team-a><create><token><landscape-viewer><--duration><24h>' "$KUBECTL_LOG" \
+  || fail "get-token did not forward namespace before service account"
+assert_api_calls_use_guarded_kubeconfig "selected namespace and service-account token"
+
+: >"$KUBECTL_LOG"
+run_setup get-token -sa landscape-editor -n team-b >"$COMMAND_OUTPUT" 2>&1
+grep -q '^api|.*<--namespace><team-b><create><token><landscape-editor><--duration><24h>' "$KUBECTL_LOG" \
+  || fail "get-token did not forward service account before namespace"
+assert_api_calls_use_guarded_kubeconfig "reverse-order namespace and service-account token"
+
+# Missing values and unknown options fail before the global workspace option
+# can make an API-facing request.
+assert_get_token_option_error "Error: --namespace requires a value" --namespace
+assert_get_token_option_error "Error: -n requires a value" -n
+assert_get_token_option_error "Error: --service-account requires a value" --service-account
+assert_get_token_option_error "Error: -sa requires a value" -sa
+assert_get_token_option_error "Unknown option: --bogus" --bogus
 
 # Help documents only dispatched commands. The removed legacy command is not a
 # compatibility path: it fails as an unknown command before any API request.
@@ -424,6 +464,8 @@ grep -Fq 'ensure-single-demo-workspace' "$COMMAND_OUTPUT" \
   || fail "help did not document ensure-single-demo-workspace"
 grep -Fq 'operation-in-progress' "$COMMAND_OUTPUT" \
   || fail "help did not document named scenarios"
+grep -Fq '[--namespace|-n NAMESPACE] [--service-account|-sa NAME]' "$COMMAND_OUTPUT" \
+  || fail "help did not document get-token namespace and service-account options"
 if grep -Eq 'create-single-demo-workspace|toggle-shoot-status|random-update-shoots|simulate-shoot-op' "$COMMAND_OUTPUT"; then
   fail "help advertised a removed or undispatched command"
 fi

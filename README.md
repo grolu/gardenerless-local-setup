@@ -191,11 +191,14 @@ requires it:
 
 The baseline also applies `resources/system-viewer-rbac.yaml`. To generate a
 read-only token for its `landscape-viewer` service account, select that account
-explicitly:
+and namespace explicitly:
 
 ```bash
-./gardenerless-setup.sh get-token --service-account landscape-viewer
+./gardenerless-setup.sh get-token --namespace garden --service-account landscape-viewer
 ```
+
+`--namespace` (`-n`) defaults to `garden`, and `--service-account` (`-sa`)
+defaults to `dashboard-user`. The options can be supplied in either order.
 
 Treat the output as a credential: paste it directly into the local login UI and
 do not save it in source files, fixtures, screenshots, issue comments, or
@@ -226,7 +229,7 @@ selection or resource access. `--workspace` selects a workspace directly under
 | `ensure-single-demo-workspace` | Create only missing baseline fixture resources. |
 | `scenario <name>` | Apply `healthy-shoot`, `failing-shoot`, `many-shoots`, or `operation-in-progress`. |
 | `dashboard-kubeconfigs` | Print local generated dashboard-kubeconfig paths; no API request. |
-| `get-token [--service-account NAME]` | Print a 24-hour local service-account token (default: `dashboard-user`). |
+| `get-token [--namespace NAMESPACE] [--service-account NAME]` | Print a 24-hour local service-account token (defaults: namespace `garden`, account `dashboard-user`). |
 | `create-demo-workspaces` | Create the legacy multi-workspace sample fixture. |
 | `setup-gardener-crds`, `cluster-resources` | Apply repository fixture CRDs and cluster resources. |
 | `add-project`, `add-shoot`, `add-projects`, `add-shoots` | Add local fixture resources for manual experimentation. |

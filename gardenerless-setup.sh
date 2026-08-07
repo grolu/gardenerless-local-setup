@@ -1317,8 +1317,8 @@ Commands:
       Apply cloudprofile & seed YAMLs
 
   ${GREEN}get-token${NC}
-      ${YELLOW}[--service-account|-sa NAME]${NC}
-      Print service account token (default: dashboard-user)
+      ${YELLOW}[--namespace|-n NAMESPACE] [--service-account|-sa NAME]${NC}
+      Print service account token (defaults: namespace garden, account dashboard-user)
 
   ${GREEN}dashboard-kubeconfigs${NC}
       Print paths of dashboard kubeconfigs
@@ -1399,7 +1399,40 @@ set -- "${ARGS[@]}"
 if [[ $# -lt 1 ]]; then show_help; fi
 COMMAND="$1"; shift
 
-# 3) Guard API-facing commands before applying any global workspace.
+# 3) Validate get-token options before any API-facing workspace selection.
+if [[ "$COMMAND" == "get-token" ]]; then
+  namespace="garden"
+  service_account="dashboard-user"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --namespace|-n)
+        if [[ -z "${2:-}" || "${2:0:1}" == "-" ]]; then
+          log_error "Error: $1 requires a value"
+          exit 1
+        fi
+        namespace="$2"
+        shift 2
+        ;;
+      --service-account|-sa)
+        if [[ -z "${2:-}" || "${2:0:1}" == "-" ]]; then
+          log_error "Error: $1 requires a value"
+          exit 1
+        fi
+        service_account="$2"
+        shift 2
+        ;;
+      -h|--help)
+        show_help
+        ;;
+      *)
+        log_error "Unknown option: $1"
+        exit 1
+        ;;
+    esac
+  done
+fi
+
+# 4) Guard API-facing commands before applying any global workspace.
 if command_contacts_kubernetes_api "$COMMAND"; then
   # status reports local diagnostics before attempting validation and never
   # changes workspaces, even when a global --workspace option was supplied.
@@ -1418,7 +1451,7 @@ if command_contacts_kubernetes_api "$COMMAND"; then
   fi
 fi
 
-# 4) Dispatch & per-command flag parsing
+# 5) Dispatch commands.
 case "$COMMAND" in
   setup-kcp)
     setup_kcp
@@ -1445,15 +1478,7 @@ case "$COMMAND" in
     ;;
 
   get-token)
-    SA_NAME="dashboard-user"
-    while [[ $# -gt 0 ]]; do
-      case "$1" in
-        --service-account|-sa) SA_NAME="$2"; shift 2;;
-        -h|--help) show_help;;
-        *) log_error "Unknown option: $1"; exit 1;;
-      esac
-    done
-    active_kubectl -n garden create token "$SA_NAME" --duration 24h
+    active_kubectl --namespace "$namespace" create token "$service_account" --duration 24h
     ;;
 
   dashboard-kubeconfigs)
