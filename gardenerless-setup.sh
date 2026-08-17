@@ -3,7 +3,6 @@ set -o pipefail
 
 RED=$'\033[0;31m'
 GREEN=$'\033[0;32m'
-YELLOW=$'\033[0;33m'
 BLUE=$'\033[0;34m'
 NC=$'\033[0m'
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -109,7 +108,7 @@ create_kubeconfig() {
   local previous_kubeconfig="$ACTIVE_GARDENERLESS_KUBECONFIG"
   local cur
 
-  log_info "${YELLOW}Creating kubeconfig for workspace '$ws'...${NC}"
+  log_info "${BLUE}Creating kubeconfig for workspace '$ws'...${NC}"
   if ! cp "$KCP_KUBECONFIG" "$dest"; then
     return 1
   fi
@@ -261,7 +260,7 @@ warm_dashboard_apis() {
   local timeout_seconds="${GARDENERLESS_DASHBOARD_WARM_TIMEOUT_SECONDS:-60}"
   local deadline spec
 
-  log_info "${YELLOW}Warming Dashboard API resources before ready...${NC}"
+  log_info "${BLUE}Warming Dashboard API resources before ready...${NC}"
 
   if ! activate_gardenerless_kubeconfig "$dashboard_single_cfg"; then
     ACTIVE_GARDENERLESS_KUBECONFIG="$previous_kubeconfig"
@@ -299,7 +298,7 @@ wait_for_crd_established() {
 setup_gardener_crds() {
   local file crd_name
 
-  log_info "${YELLOW}Setting up Gardener CRDs...${NC}"
+  log_info "${BLUE}Setting up Gardener CRDs...${NC}"
   run_quiet active_kubectl apply -f "${SCRIPT_DIR}/crds/" || return 1
   for file in "${SCRIPT_DIR}"/crds/*.yaml; do
     if ! crd_name=$(yq_read '.metadata.name' "$file"); then
@@ -312,7 +311,7 @@ setup_gardener_crds() {
 }
 
 apply_cluster_resources() {
-  log_info "${YELLOW}Applying cluster resources...${NC}"
+  log_info "${BLUE}Applying cluster resources...${NC}"
   run_quiet active_kubectl apply -f "$RES_DIR/cloudprofile-*.yaml"
   run_quiet active_kubectl apply -f "$RES_DIR/seed-*.yaml"
   for f in "$RES_DIR"/seed-*.yaml; do
@@ -325,14 +324,68 @@ apply_cluster_resources() {
   done
 }
 
+label_credential_secrets() {
+  local bindings
+  local binding_namespace binding_name credentials_kind credentials_namespace credentials_name provider_type
+  local label
+  local labeled=0 skipped=0 failed=0
+
+  # A pipe is safe here because Kubernetes names, namespaces, kinds, and label
+  # values cannot contain it. It also preserves an omitted credentialsRef.namespace.
+  if ! bindings=$(active_kubectl get credentialsbindings.security.gardener.cloud --all-namespaces \
+    -o jsonpath='{range .items[*]}{.metadata.namespace}{"|"}{.metadata.name}{"|"}{.credentialsRef.kind}{"|"}{.credentialsRef.namespace}{"|"}{.credentialsRef.name}{"|"}{.provider.type}{"\n"}{end}'); then
+    log_error "${RED}Unable to list CredentialsBindings.${NC}"
+    return 1
+  fi
+
+  while IFS='|' read -r binding_namespace binding_name credentials_kind credentials_namespace credentials_name provider_type; do
+    [[ -z "$binding_name" ]] && continue
+
+    if [[ "$credentials_kind" != "Secret" ]]; then
+      log_info "Skipping CredentialsBinding '$binding_namespace/$binding_name': credentialsRef is a ${credentials_kind:-resource without a kind}."
+      ((skipped++))
+      continue
+    fi
+
+    if [[ -z "$credentials_name" || -z "$provider_type" ]]; then
+      log_error "${RED}Skipping CredentialsBinding '$binding_namespace/$binding_name': credentialsRef.name or provider.type is missing.${NC}"
+      ((failed++))
+      continue
+    fi
+
+    credentials_namespace="${credentials_namespace:-$binding_namespace}"
+    label="provider.shoot.gardener.cloud/${provider_type}"
+
+    if ! active_kubectl get secret "$credentials_name" --namespace "$credentials_namespace" >/dev/null; then
+      log_error "${RED}Skipping CredentialsBinding '$binding_namespace/$binding_name': referenced Secret '$credentials_namespace/$credentials_name' does not exist.${NC}"
+      ((failed++))
+      continue
+    fi
+
+    if active_kubectl label secret "$credentials_name" --namespace "$credentials_namespace" "${label}=true" --overwrite; then
+      ((labeled++))
+    else
+      log_error "${RED}Unable to label Secret '$credentials_namespace/$credentials_name' for CredentialsBinding '$binding_namespace/$binding_name'.${NC}"
+      ((failed++))
+    fi
+  done <<< "$bindings"
+
+  if (( failed > 0 )); then
+    log_error "${RED}Labeled $labeled Secret reference(s); skipped $skipped; $failed failed.${NC}"
+    return 1
+  fi
+
+  log_info "${GREEN}Labeled $labeled Secret reference(s); skipped $skipped non-Secret reference(s).${NC}"
+}
+
 create_project_resource() {
-  log_info "${YELLOW}Creating project resource '$1'...${NC}"
+  log_info "${BLUE}Creating project resource '$1'...${NC}"
   apply_yaml_template "$RES_DIR/project-template.yaml" "$1" "$2" \
     | run_quiet active_kubectl apply -f -
 }
 
 patch_project_status() {
-  log_info "${YELLOW}Marking project '$1' as Ready...${NC}"
+  log_info "${BLUE}Marking project '$1' as Ready...${NC}"
   run_quiet active_kubectl patch project "$1" \
     --type=merge --subresource=status -p '{"status":{"phase":"Ready"}}'
 }
@@ -394,7 +447,7 @@ create_managed_seed() {
   local zone
   zone=$(yq_read '.spec.provider.zones[0]' "$seed_file")
 
-  log_info "${YELLOW}Creating managed seed shoot for '$seed_name'...${NC}"
+  log_info "${BLUE}Creating managed seed shoot for '$seed_name'...${NC}"
 
   # Create seed shoot
   sed -e "s/NAMEPLACEHOLDER/${seed_name}/g" \
@@ -409,7 +462,7 @@ create_managed_seed() {
   patch_shoot_seed_status "$seed_name"
 
   # Create ManagedSeed resource
-  log_info "${YELLOW}Creating ManagedSeed resource for '$seed_name'...${NC}"
+  log_info "${BLUE}Creating ManagedSeed resource for '$seed_name'...${NC}"
   sed -e "s/NAMEPLACEHOLDER/${seed_name}/g" \
       "$RES_DIR/managedseed-template.yaml" | run_quiet active_kubectl apply -n garden -f -
 }
@@ -485,7 +538,7 @@ ensure_kcp_repository_root() {
     return 1
   fi
 
-  log_info "${YELLOW}Initializing the repository-local kcp checkout...${NC}"
+  log_info "${BLUE}Initializing the repository-local kcp checkout...${NC}"
   run_quiet git -C "$KCP_DIR" init || return 1
 
   if ! verify_kcp_worktree_root; then
@@ -625,14 +678,14 @@ setup_kcp() {
 
   if origin_url=$(git -C "$KCP_DIR" remote get-url origin 2>/dev/null); then
     if [[ "$origin_url" != "$KCP_REPO" ]]; then
-      log_info "${YELLOW}Restoring the repository-owned kcp origin...${NC}"
+      log_info "${BLUE}Restoring the repository-owned kcp origin...${NC}"
       run_quiet git -C "$KCP_DIR" remote set-url origin "$KCP_REPO" || return 1
     fi
   else
     run_quiet git -C "$KCP_DIR" remote add origin "$KCP_REPO" || return 1
   fi
 
-  log_info "${YELLOW}Fetching kcp ${KCP_RELEASE}...${NC}"
+  log_info "${BLUE}Fetching kcp ${KCP_RELEASE}...${NC}"
   run_quiet git -C "$KCP_DIR" fetch \
     --force \
     --depth=1 \
@@ -649,7 +702,7 @@ setup_kcp() {
     return 1
   fi
 
-  log_info "${YELLOW}Checking out verified kcp commit ${KCP_COMMIT}...${NC}"
+  log_info "${BLUE}Checking out verified kcp commit ${KCP_COMMIT}...${NC}"
   run_quiet git -C "$KCP_DIR" checkout --detach --force "$KCP_COMMIT" || return 1
   run_quiet git -C "$KCP_DIR" clean -ffdx -e .kcp/ || return 1
 
@@ -666,7 +719,7 @@ setup_kcp() {
     return 1
   fi
 
-  log_info "${YELLOW}Building repository-local kcp binaries...${NC}"
+  log_info "${BLUE}Building repository-local kcp binaries...${NC}"
   run_quiet make -C "$KCP_DIR" build || return 1
   for binary in kcp kubectl-kcp kubectl-ws; do
     if [[ ! -x "${KCP_BIN_DIR}/${binary}" ]]; then
@@ -714,7 +767,7 @@ get_shoots() {
 
 create_shoot () {
     local name=$1 ns=$2
-    log_info "${YELLOW}Creating shoot resource '$name' in namespace '$ns'...${NC}"
+    log_info "${BLUE}Creating shoot resource '$name' in namespace '$ns'...${NC}"
     apply_yaml_template "${RES_DIR}/shoot-template.yaml" "$name" "$ns" | active_kubectl apply -n "$ns" -f - >/dev/null
     patch_shoot_ready "$name" "$ns"
 }
@@ -726,7 +779,7 @@ generate_uid() {
 
 bulk_projects() {
     local count=$1
-    echo -e "${YELLOW}Bulk-creating $count project(s)...${NC}"
+    echo -e "${BLUE}Bulk-creating $count project(s)...${NC}"
     for ((i=1;i<=count;i++)); do
         name=$(generate_uid)
         NAMESPACE="garden-$name"
@@ -743,7 +796,7 @@ bulk_shoots() {
         echo -e "${RED}project ns $ns not found${NC}"
         exit 1
     fi
-    echo -e "${YELLOW}Creating $count shoot(s) in project '$proj'...${NC}"
+    echo -e "${BLUE}Creating $count shoot(s) in project '$proj'...${NC}"
     for ((i=1;i<=count;i++)); do
         sname=$(generate_uid)
         create_shoot "$sname" "$ns"
@@ -752,7 +805,7 @@ bulk_shoots() {
 
 create_demo_ws() {
     local ws=$1
-    echo -e "${YELLOW}Creating demo workspace $ws...${NC}"
+    echo -e "${BLUE}Creating demo workspace $ws...${NC}"
     if ! switch_to_root; then
       log_error "Error: could not switch to root before creating demo workspace '$ws'."
       return 1
@@ -762,7 +815,7 @@ create_demo_ws() {
       log_error "Error: could not create or enter demo workspace '$ws'."
       return 1
     fi
-    echo -e "${YELLOW}Setting up dashboard-user service account...${NC}"
+    echo -e "${BLUE}Setting up dashboard-user service account...${NC}"
     run_quiet active_kubectl create ns garden
     run_quiet active_kubectl create sa dashboard-user -n garden
     run_quiet active_kubectl create clusterrolebinding cluster-admin --clusterrole=cluster-admin --serviceaccount=garden:dashboard-user
@@ -916,7 +969,7 @@ ensure_managed_seed() {
   resource_exists shoot "$seed_name" -n garden
   resource_status=$?
   if [[ $resource_status -eq 1 ]]; then
-    log_info "${YELLOW}Creating missing managed seed shoot '$seed_name'...${NC}"
+    log_info "${BLUE}Creating missing managed seed shoot '$seed_name'...${NC}"
     sed -e "s/NAMEPLACEHOLDER/${seed_name}/g" \
         -e "s/CLOUDPROFILEPLACEHOLDER/${provider}/g" \
         -e "s/PROVIDERPLACEHOLDER/${provider}/g" \
@@ -933,7 +986,7 @@ ensure_managed_seed() {
   resource_exists managedseed "$seed_name" -n garden
   resource_status=$?
   if [[ $resource_status -eq 1 ]]; then
-    log_info "${YELLOW}Creating missing ManagedSeed resource '$seed_name'...${NC}"
+    log_info "${BLUE}Creating missing ManagedSeed resource '$seed_name'...${NC}"
     sed -e "s/NAMEPLACEHOLDER/${seed_name}/g" \
         "$RES_DIR/managedseed-template.yaml" \
       | active_kubectl apply -n garden -f - >/dev/null
@@ -979,14 +1032,14 @@ ensure_demo_workspace() {
     log_error "Error: could not switch to root before creating demo workspace '$workspace'."
     return 1
   fi
-  log_info "${YELLOW}Creating missing demo workspace '$workspace'...${NC}"
+  log_info "${BLUE}Creating missing demo workspace '$workspace'...${NC}"
   active_kubectl ws create "$workspace" --enter >/dev/null
 }
 
 ensure_single_demo() {
   local workspace="demo" namespace project shoot resource_status
 
-  log_info "${YELLOW}Ensuring the single demo without replacing existing resources...${NC}"
+  log_info "${BLUE}Ensuring the single demo without replacing existing resources...${NC}"
   ensure_demo_workspace "$workspace" || return 1
 
   resource_exists namespace garden
@@ -1061,7 +1114,7 @@ ensure_single_demo() {
       return 1
     fi
     if ! dashboard_kubeconfig_is_usable; then
-      log_info "${YELLOW}Refreshing the unusable generated dashboard kubeconfig...${NC}"
+      log_info "${BLUE}Refreshing the unusable generated dashboard kubeconfig...${NC}"
       create_kubeconfig "$dashboard_single_cfg" "$workspace" || return 1
     fi
   else
@@ -1272,6 +1325,7 @@ command_contacts_kubernetes_api() {
     status|\
     setup-gardener-crds|\
     cluster-resources|\
+    label-credential-secrets|\
     get-token|\
     create-demo-workspaces|\
     ensure-single-demo-workspace|\
@@ -1293,7 +1347,7 @@ show_help() {
 ${BLUE}Usage:${NC} $0 <command> [options]
 
 This tool operates on the kcp admin.kubeconfig. It works with the workspace set in this KUBECONFIG.
-You can overwrite the workspace using the ${YELLOW}--workspace|-ws <ws>${NC} option.
+You can overwrite the workspace using the ${BLUE}--workspace|-ws <ws>${NC} option.
 The script only operates on workspaces directly under root (no deep nesting).
 ${GREEN}create-demo-workspaces${NC} always creates its demo workspaces under root.
 
@@ -1316,8 +1370,12 @@ Commands:
   ${GREEN}cluster-resources${NC}
       Apply cloudprofile & seed YAMLs
 
+  ${GREEN}label-credential-secrets${NC}
+      Label every Secret referenced by a CredentialsBinding with
+      provider.shoot.gardener.cloud/<provider-type>=true
+
   ${GREEN}get-token${NC}
-      ${YELLOW}[--namespace|-n NAMESPACE] [--service-account|-sa NAME]${NC}
+      ${BLUE}[--namespace|-n NAMESPACE] [--service-account|-sa NAME]${NC}
       Print service account token (defaults: namespace garden, account dashboard-user)
 
   ${GREEN}dashboard-kubeconfigs${NC}
@@ -1327,7 +1385,7 @@ Commands:
       Read-only local runtime, guarded API, and demo-resource status
 
   ${GREEN}verify-kcp${NC}
-      ${YELLOW}--format=json${NC}
+      ${BLUE}--format=json${NC}
       Verify the selected kcp checkout and binary; print schema-versioned JSON
 
   ${GREEN}create-demo-workspaces${NC}
@@ -1337,31 +1395,31 @@ Commands:
       Create only missing resources for the local demo workspace
 
   ${GREEN}scenario${NC}
-      ${YELLOW}<healthy-shoot|failing-shoot|many-shoots|operation-in-progress>${NC}
+      ${BLUE}<healthy-shoot|failing-shoot|many-shoots|operation-in-progress>${NC}
       Apply one named local demo fixture state for dashboard verification
 
   ${GREEN}add-project${NC}
-      ${YELLOW}--name|-n NAME [--namespace|-N NAMESPACE]${NC}
+      ${BLUE}--name|-n NAME [--namespace|-N NAMESPACE]${NC}
       Add a project (status=ready)
 
   ${GREEN}add-shoot${NC}
-      ${YELLOW}--shoot|-s SHOOT --project|-p PROJECT${NC}
+      ${BLUE}--shoot|-s SHOOT --project|-p PROJECT${NC}
       Add one shoot to a project
 
   ${GREEN}add-projects${NC}
-      ${YELLOW}--count|-c COUNT${NC}
+      ${BLUE}--count|-c COUNT${NC}
       Bulk create N projects
 
   ${GREEN}add-shoots${NC}
-      ${YELLOW}--project|-p PROJECT --count|-c COUNT${NC}
+      ${BLUE}--project|-p PROJECT --count|-c COUNT${NC}
       Bulk create N shoots in a project
 
 Options:
-  ${YELLOW}-h, --help${NC}
+  ${BLUE}-h, --help${NC}
       Show this help message and exit
 
 Environment:
-  ${YELLOW}GARDENERLESS_KCP_DIR${NC}
+  ${BLUE}GARDENERLESS_KCP_DIR${NC}
       kcp source/runtime directory (default: ${SCRIPT_DIR}/kcp)
 EOF
   exit "${1:-0}"
@@ -1477,6 +1535,11 @@ case "$COMMAND" in
     apply_cluster_resources
     ;;
 
+  label-credential-secrets)
+    [[ $# -gt 0 ]] && { log_error "Unknown option: $1"; exit 1; }
+    label_credential_secrets
+    ;;
+
   get-token)
     active_kubectl --namespace "$namespace" create token "$service_account" --duration 24h
     ;;
@@ -1549,7 +1612,7 @@ case "$COMMAND" in
     done
     [[ -z "$SHOOT" || -z "$PROJECT" ]] && { log_error "Missing --shoot or --project"; exit 1; }
     ns="garden-${PROJECT}"
-    log_info "${YELLOW}Adding shoot '$SHOOT' to project '$PROJECT'...${NC}"
+    log_info "${BLUE}Adding shoot '$SHOOT' to project '$PROJECT'...${NC}"
     create_shoot "$SHOOT" "$ns"
     ;;
 

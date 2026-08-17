@@ -232,10 +232,17 @@ selection or resource access. `--workspace` selects a workspace directly under
 | `get-token [--namespace NAMESPACE] [--service-account NAME]` | Print a 24-hour local service-account token (defaults: namespace `garden`, account `dashboard-user`). |
 | `create-demo-workspaces` | Create the legacy multi-workspace sample fixture. |
 | `setup-gardener-crds`, `cluster-resources` | Apply repository fixture CRDs and cluster resources. |
+| `label-credential-secrets` | Label Secrets referenced by CredentialsBindings with their provider type. |
 | `add-project`, `add-shoot`, `add-projects`, `add-shoots` | Add local fixture resources for manual experimentation. |
 | `reset-kcp`, `reset-kcp-certs` | Destructive local-runtime maintenance; do not use for normal verification. |
 
 Run `./gardenerless-setup.sh --help` for the current flags and arguments.
+
+For example, to label credential Secrets in a local workspace:
+
+```bash
+./gardenerless-setup.sh --workspace foo-workspace label-credential-secrets
+```
 
 ## Troubleshooting
 
