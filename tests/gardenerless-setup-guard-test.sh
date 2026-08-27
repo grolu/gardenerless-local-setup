@@ -3,7 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 GARDENERLESS_SETUP="${SCRIPT_DIR}/gardenerless-setup.sh"
-KUBECTL_GARDENERLESS="${SCRIPT_DIR}/kubectl-gardenerless"
+KUBECTL_GARDENERLESS="${SCRIPT_DIR}/bin/kubectl-gardenerless"
+KUBECTL_GARDENERLESS_COMPLETION="${SCRIPT_DIR}/bin/kubectl_complete-gardenerless"
 TEST_TMP="$(mktemp -d "${TMPDIR:-/tmp}/gardenerless-guard-test.XXXXXX")"
 trap 'rm -rf "$TEST_TMP"' EXIT
 
@@ -101,6 +102,17 @@ run_kubectl_gardenerless() {
     STUB_SERVER="${STUB_SERVER_OVERRIDE:-$VALID_SERVER}" \
     KUBECONFIG="$AMBIENT_KUBECONFIG" \
     "$KUBECTL_GARDENERLESS" "$@"
+}
+
+run_kubectl_gardenerless_completion() {
+  env \
+    PATH="${STUB_BIN}:$PATH" \
+    GARDENERLESS_KCP_DIR="$RUNTIME_DIR" \
+    KUBECTL_LOG="$KUBECTL_LOG" \
+    STUB_CERT_FILE="$RUNTIME_CERT" \
+    STUB_SERVER="${STUB_SERVER_OVERRIDE:-$VALID_SERVER}" \
+    KUBECONFIG="$AMBIENT_KUBECONFIG" \
+    "$KUBECTL_GARDENERLESS_COMPLETION" "$@"
 }
 
 assert_rejected_before_api() {
@@ -952,6 +964,18 @@ wrapper_api_call="$(grep '^api|' "$KUBECTL_LOG")"
   || fail "kubectl-gardenerless changed forwarded argument boundaries"
 [[ "$wrapper_api_call" != *"$AMBIENT_KUBECONFIG"* ]] \
   || fail "ambient KUBECONFIG redirected kubectl-gardenerless"
+
+: >"$KUBECTL_LOG"
+run_kubectl_gardenerless_completion get proj >"$COMMAND_OUTPUT" 2>&1
+completion_api_call="$(grep '^api|' "$KUBECTL_LOG")"
+[[ "$completion_api_call" == *"|env=${CANONICAL_ADMIN_KUBECONFIG}|"* ]] \
+  || fail "kubectl-gardenerless completion did not set canonical KUBECONFIG"
+[[ "$completion_api_call" == *"|kubeconfig=${CANONICAL_ADMIN_KUBECONFIG}|"* ]] \
+  || fail "kubectl-gardenerless completion did not pass canonical --kubeconfig"
+[[ "$completion_api_call" == *'<__complete><get><proj>'* ]] \
+  || fail "kubectl-gardenerless completion changed forwarded argument boundaries"
+[[ "$completion_api_call" != *"$AMBIENT_KUBECONFIG"* ]] \
+  || fail "ambient KUBECONFIG redirected kubectl-gardenerless completion"
 
 : >"$KUBECTL_LOG"
 run_kubectl_gardenerless ws :root >"$COMMAND_OUTPUT" 2>&1

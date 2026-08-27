@@ -51,6 +51,8 @@ scripts/bin
 .DS_Store
 node_modules/
 bin/
+!bin/kubectl-gardenerless
+!bin/kubectl_complete-gardenerless
 dist/
 ssl/
 tmp/

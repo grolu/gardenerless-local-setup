@@ -144,9 +144,23 @@ dashboard kubeconfig paths without contacting the API.
 For ad-hoc inspection, invoke the checked-in wrapper from this repository:
 
 ```bash
-./kubectl-gardenerless get shoots -A
-./kubectl-gardenerless get projects
+./bin/kubectl-gardenerless get shoots -A
+./bin/kubectl-gardenerless get projects
 ```
+
+No `PATH` change is required for direct invocation. To use the wrapper as
+`kubectl gardenerless` with shell completion, add the Gardenerless `bin`
+directory to `PATH`:
+
+```bash
+export PATH="$PWD/bin:$PATH"
+kubectl gardenerless get shoots -A
+kubectl gardenerless get projects
+```
+
+With kubectl 1.26 or newer and kubectl shell completion enabled, the companion
+`kubectl_complete-gardenerless` executable then provides normal kubectl
+argument and resource completion.
 
 The wrapper validates the local admin kubeconfig, supplies it explicitly, and
 forwards ordinary kubectl arguments unchanged. It rejects caller-provided
@@ -155,8 +169,7 @@ The setup workflow and wrapper use the same guarded invocation path. Validation
 is cached only while the selected kubeconfig and runtime certificate remain
 unchanged, so context or workspace changes are revalidated before the next API
 request.
-Do not substitute plain `kubectl` for this guarded workflow, and no `PATH`
-installation is required.
+Do not substitute plain `kubectl` for this guarded workflow.
 
 ## Named visual-verification scenarios
 

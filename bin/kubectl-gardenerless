@@ -2,7 +2,8 @@
 set -o pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-KCP_DIR="${GARDENERLESS_KCP_DIR:-${SCRIPT_DIR}/kcp}"
+REPOSITORY_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
+KCP_DIR="${GARDENERLESS_KCP_DIR:-${REPOSITORY_ROOT}/kcp}"
 KCP_STATE_DIR="${KCP_DIR}/.kcp"
 KCP_KUBECONFIG="${KCP_STATE_DIR}/admin.kubeconfig"
 
@@ -10,8 +11,8 @@ log_error() {
   printf '%s\n' "$*" >&2
 }
 
-# shellcheck source=lib/gardenerless-kubeconfig.sh
-if ! source "${SCRIPT_DIR}/lib/gardenerless-kubeconfig.sh"; then
+# shellcheck source=../lib/gardenerless-kubeconfig.sh
+if ! source "${REPOSITORY_ROOT}/lib/gardenerless-kubeconfig.sh"; then
   exit 1
 fi
 
