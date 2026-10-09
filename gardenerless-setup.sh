@@ -706,22 +706,6 @@ get_shoots() {
   esac
 }
 
-get_self_hosted_shoots() {
-  case "$1:$2" in
-    demo-animals:cat)        echo "cat-hosted"         ;;
-    demo-animals:dog)        echo "dog-hosted"         ;;
-    demo-plants:pine)        echo "pine-hosted"        ;;
-    demo-plants:rose)        echo "rose-hosted"        ;;
-    demo-plants:sunflower)   echo "sunflower-hosted"   ;;
-    demo-cars:bmw)           echo "bmw-hosted"         ;;
-    demo-cars:mercedes)      echo "merc-hosted"        ;;
-    demo-cars:tesla)         echo "tesla-hosted"       ;;
-    demo:pine)               echo "pine-hosted"        ;;
-    demo:rose)               echo "rose-hosted"        ;;
-    demo:sunflower)          echo "sunflower-hosted"   ;;
-  esac
-}
-
 # toggles a single shoot between ready and error
 
 # every $interval seconds, pick a random shoot (optionally per project) and flip it
@@ -788,6 +772,7 @@ create_demo_ws() {
     apply_cluster_resources
     create_project_resource "garden" "garden"
     patch_project_status "garden"
+    create_shoot "root-selfhosted" "garden" "${RES_DIR}/shoot-self-hosted-template.yaml"
     case "$ws" in
         demo-animals) projects="cat dog" ;;
         demo-plants)  projects="pine rose sunflower" ;;
@@ -802,11 +787,8 @@ create_demo_ws() {
         for shoot in $(get_shoots "$ws" "$proj"); do
             create_shoot "$shoot" "$ns"
         done
-        for shoot in $(get_self_hosted_shoots "$ws" "$proj"); do
-            create_shoot "$shoot" "$ns" "${RES_DIR}/shoot-self-hosted-template.yaml"
-        done
         apply_yaml_template "${RES_DIR}/secret-template.yaml" "aws-secret" "$ns" | active_kubectl apply -n "$ns" -f - >/dev/null
-        apply_yaml_template "${RES_DIR}/secretbinding-template.yaml" "aws-secret-binding" "$ns" | active_kubectl apply -n "$ns" -f - >/dev/null
+        apply_yaml_template "${RES_DIR}/secretbinding-template.yaml" "aws-secret" "$ns" | active_kubectl apply -n "$ns" -f - >/dev/null
     done
 }
 
@@ -1044,6 +1026,14 @@ ensure_single_demo() {
     return "$resource_status"
   fi
 
+  resource_exists shoot root-selfhosted -n garden
+  resource_status=$?
+  if [[ $resource_status -eq 1 ]]; then
+    create_shoot root-selfhosted garden "${RES_DIR}/shoot-self-hosted-template.yaml" || return 1
+  elif [[ $resource_status -ne 0 ]]; then
+    return "$resource_status"
+  fi
+
   for project in pine rose sunflower; do
     namespace="garden-${project}"
     resource_exists namespace "$namespace"
@@ -1070,17 +1060,8 @@ ensure_single_demo() {
       [[ $resource_status -eq 1 ]] || return "$resource_status"
       create_shoot "$shoot" "$namespace" || return 1
     done
-    for shoot in $(get_self_hosted_shoots "$workspace" "$project"); do
-      resource_exists shoot "$shoot" -n "$namespace"
-      resource_status=$?
-      if [[ $resource_status -eq 0 ]]; then
-        continue
-      fi
-      [[ $resource_status -eq 1 ]] || return "$resource_status"
-      create_shoot "$shoot" "$namespace" "${RES_DIR}/shoot-self-hosted-template.yaml" || return 1
-    done
     ensure_templated_resource secret "$RES_DIR/secret-template.yaml" aws-secret "$namespace" || return 1
-    ensure_templated_resource secretbinding "$RES_DIR/secretbinding-template.yaml" aws-secret-binding "$namespace" || return 1
+    ensure_templated_resource secretbinding "$RES_DIR/secretbinding-template.yaml" aws-secret "$namespace" || return 1
   done
 
   if [[ -e "$dashboard_single_cfg" ]]; then
@@ -1565,13 +1546,12 @@ case "$COMMAND" in
     ;;
 
   add-shoot)
-    SHOOT=""; PROJECT=""; SELF_HOSTED=false
+    SHOOT=""; PROJECT=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --workspace|-ws)   shift 2;;           # allow global anywhere
         --shoot|-s)        SHOOT="$2";    shift 2;;
         --project|-p)      PROJECT="$2";  shift 2;;
-        --self-hosted)     SELF_HOSTED=true; shift;;
         -h|--help)         show_help;;
         *) log_error "Unknown option: $1"; exit 1;;
       esac
@@ -1579,11 +1559,7 @@ case "$COMMAND" in
     [[ -z "$SHOOT" || -z "$PROJECT" ]] && { log_error "Missing --shoot or --project"; exit 1; }
     ns="garden-${PROJECT}"
     log_info "${YELLOW}Adding shoot '$SHOOT' to project '$PROJECT'...${NC}"
-    if $SELF_HOSTED; then
-      create_shoot "$SHOOT" "$ns" "${RES_DIR}/shoot-self-hosted-template.yaml"
-    else
-      create_shoot "$SHOOT" "$ns"
-    fi
+    create_shoot "$SHOOT" "$ns"
     ;;
 
   add-projects)

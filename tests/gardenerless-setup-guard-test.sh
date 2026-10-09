@@ -804,6 +804,11 @@ grep -q '^api|.*<apply><-f>' "$KUBECTL_LOG" \
   || fail "ensure-single-demo-workspace did not apply missing fixture resources"
 grep -q '^api|.*<patch><shoot>' "$KUBECTL_LOG" \
   || fail "ensure-single-demo-workspace did not initialize a newly created Shoot"
+root_self_hosted_patch_count="$(
+  grep -c '^api|.*<patch><shoot><root-selfhosted><-n><garden>' "$KUBECTL_LOG"
+)"
+[[ "$root_self_hosted_patch_count" -eq 1 ]] \
+  || fail "ensure-single-demo-workspace did not create exactly one garden/root-selfhosted Shoot"
 missing_crd_wait_count="$(
   grep -c '^api|.*<wait><--for=condition=Established><--timeout=60s><customresourcedefinition/' "$KUBECTL_LOG"
 )"
