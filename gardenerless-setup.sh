@@ -104,6 +104,39 @@ apply_yaml_template() {
       -e "s/NAMEPLACEHOLDER/$2/g" "$1"
 }
 
+apply_provider_yaml_template() {
+  if [[ $# -ne 4 ]]; then
+    log_error "Error: provider template rendering requires template, name, namespace, and provider."
+    return 1
+  fi
+
+  local provider="$4"
+
+  if [[ -z "$provider" ]]; then
+    log_error "Error: a provider is required to render '$1'."
+    return 1
+  fi
+
+  apply_yaml_template "$1" "$2" "$3" \
+    | sed -e "s/PROVIDERPLACEHOLDER/$provider/g"
+}
+
+apply_provider_credentials() {
+  local provider="$1" namespace="$2"
+  local name="${provider}-secret"
+  local secret_template="${RES_DIR}/secret-${provider}-template.yaml"
+
+  if [[ ! -f "$secret_template" ]]; then
+    log_error "Error: no dummy credential Secret template exists for provider '$provider'."
+    return 1
+  fi
+
+  apply_yaml_template "$secret_template" "$name" "$namespace" \
+    | active_kubectl apply -n "$namespace" -f - >/dev/null || return 1
+  apply_provider_yaml_template "${RES_DIR}/credentialsbinding-template.yaml" "$name" "$namespace" "$provider" \
+    | active_kubectl apply -n "$namespace" -f - >/dev/null
+}
+
 create_kubeconfig() {
   local dest="$1" ws="$2"
   local previous_kubeconfig="$ACTIVE_GARDENERLESS_KUBECONFIG"
@@ -149,7 +182,9 @@ dashboard_kubeconfig_is_usable() {
 
 # Dashboard first-load / early-route APIs. Listing them once initializes KCP's
 # workspace-scoped /customresources cachers so cold first login does not 429
-# under the Dashboard backend's parallel credential fan-out.
+# under the Dashboard backend's parallel credential fan-out. The Dashboard
+# still lists the legacy SecretBinding API for mixed landscapes, so it remains
+# in these compatibility lists even though this fixture no longer creates one.
 dashboard_warm_list_specs() {
   cat <<'EOF'
 projects.core.gardener.cloud
@@ -395,6 +430,9 @@ create_managed_seed() {
   zone=$(yq_read '.spec.provider.zones[0]' "$seed_file")
 
   log_info "${YELLOW}Creating managed seed shoot for '$seed_name'...${NC}"
+
+  # Credentials must exist before the Shoot that references them is submitted.
+  apply_provider_credentials "$provider" garden || return 1
 
   # Create seed shoot
   sed -e "s/NAMEPLACEHOLDER/${seed_name}/g" \
@@ -714,6 +752,14 @@ get_shoots() {
 
 create_shoot () {
     local name=$1 ns=$2 template="${3:-${RES_DIR}/shoot-template.yaml}"
+    local provider
+
+    if ! provider=$(yq_read '.spec.provider.type' "$template"); then
+      log_error "Error: could not read the provider type from '$template'."
+      return 1
+    fi
+    apply_provider_credentials "$provider" "$ns" || return 1
+
     log_info "${YELLOW}Creating shoot resource '$name' in namespace '$ns'...${NC}"
     apply_yaml_template "$template" "$name" "$ns" | active_kubectl apply -n "$ns" -f - >/dev/null
     patch_shoot_ready "$name" "$ns"
@@ -787,8 +833,6 @@ create_demo_ws() {
         for shoot in $(get_shoots "$ws" "$proj"); do
             create_shoot "$shoot" "$ns"
         done
-        apply_yaml_template "${RES_DIR}/secret-template.yaml" "aws-secret" "$ns" | active_kubectl apply -n "$ns" -f - >/dev/null
-        apply_yaml_template "${RES_DIR}/secretbinding-template.yaml" "aws-secret" "$ns" | active_kubectl apply -n "$ns" -f - >/dev/null
     done
 }
 
@@ -837,6 +881,45 @@ ensure_templated_resource() {
 
   apply_yaml_template "$template" "$name" "$namespace" \
     | active_kubectl apply -n "$namespace" -f - >/dev/null
+}
+
+ensure_provider_templated_resource() {
+  if [[ $# -ne 5 ]]; then
+    log_error "Error: ensuring a provider resource requires resource, template, name, namespace, and provider."
+    return 1
+  fi
+
+  local resource="$1" template="$2" name="$3" namespace="$4" provider="$5" resource_status
+
+  if [[ -z "$provider" ]]; then
+    log_error "Error: a provider is required to ensure '$resource/$name'."
+    return 1
+  fi
+
+  resource_exists "$resource" "$name" -n "$namespace"
+  resource_status=$?
+  if [[ $resource_status -eq 0 ]]; then
+    return 0
+  fi
+  [[ $resource_status -eq 1 ]] || return "$resource_status"
+
+  apply_provider_yaml_template "$template" "$name" "$namespace" "$provider" \
+    | active_kubectl apply -n "$namespace" -f - >/dev/null
+}
+
+ensure_provider_credentials() {
+  local provider="$1" namespace="$2"
+  local name="${provider}-secret"
+  local secret_template="${RES_DIR}/secret-${provider}-template.yaml"
+
+  if [[ ! -f "$secret_template" ]]; then
+    log_error "Error: no dummy credential Secret template exists for provider '$provider'."
+    return 1
+  fi
+
+  ensure_templated_resource secret "$secret_template" "$name" "$namespace" || return 1
+  ensure_provider_templated_resource credentialsbinding "${RES_DIR}/credentialsbinding-template.yaml" \
+    "$name" "$namespace" "$provider"
 }
 
 ensure_system_viewer_rbac() {
@@ -913,6 +996,10 @@ ensure_managed_seed() {
     log_error "Error: could not read ManagedSeed inputs from '$seed_file'."
     return 1
   fi
+
+  # Ensure the generated Shoot never points at a missing CredentialsBinding or
+  # credential Secret. Multiple seeds may share one provider credential.
+  ensure_provider_credentials "$provider" garden || return 1
 
   resource_exists shoot "$seed_name" -n garden
   resource_status=$?
@@ -1051,6 +1138,7 @@ ensure_single_demo() {
     elif [[ $resource_status -ne 0 ]]; then
       return "$resource_status"
     fi
+    ensure_provider_credentials aws "$namespace" || return 1
     for shoot in $(get_shoots "$workspace" "$project"); do
       resource_exists shoot "$shoot" -n "$namespace"
       resource_status=$?
@@ -1060,8 +1148,6 @@ ensure_single_demo() {
       [[ $resource_status -eq 1 ]] || return "$resource_status"
       create_shoot "$shoot" "$namespace" || return 1
     done
-    ensure_templated_resource secret "$RES_DIR/secret-template.yaml" aws-secret "$namespace" || return 1
-    ensure_templated_resource secretbinding "$RES_DIR/secretbinding-template.yaml" aws-secret "$namespace" || return 1
   done
 
   if [[ -e "$dashboard_single_cfg" ]]; then

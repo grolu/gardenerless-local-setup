@@ -149,6 +149,35 @@ for dependency in openssl yq; do
   command -v "$dependency" >/dev/null 2>&1 || fail "required test dependency not found: $dependency"
 done
 
+# Fixture Shoots use the non-deprecated binding field, and every supported
+# provider has a dashboard-discoverable Secret template.
+for shoot_template in \
+  "${SCRIPT_DIR}/resources/shoot-template.yaml" \
+  "${SCRIPT_DIR}/resources/shoot-self-hosted-template.yaml" \
+  "${SCRIPT_DIR}/resources/shoot-seed-template.yaml"; do
+  grep -q '^[[:space:]]*credentialsBindingName:' "$shoot_template" \
+    || fail "Shoot template does not reference a CredentialsBinding: $shoot_template"
+  if grep -q '^[[:space:]]*secretBindingName:' "$shoot_template"; then
+    fail "Shoot template still references a SecretBinding: $shoot_template"
+  fi
+done
+
+[[ "$(test_yq_read '.kind' "${SCRIPT_DIR}/resources/credentialsbinding-template.yaml")" == "CredentialsBinding" ]] \
+  || fail "credentials binding template has the wrong kind"
+[[ "$(test_yq_read '.credentialsRef.apiVersion' "${SCRIPT_DIR}/resources/credentialsbinding-template.yaml")" == "v1" ]] \
+  || fail "credentials binding template does not reference a core/v1 credential"
+[[ "$(test_yq_read '.credentialsRef.kind' "${SCRIPT_DIR}/resources/credentialsbinding-template.yaml")" == "Secret" ]] \
+  || fail "credentials binding template does not reference a Secret"
+
+for provider in alicloud aws azure gcp openstack; do
+  secret_template="${SCRIPT_DIR}/resources/secret-${provider}-template.yaml"
+  [[ -f "$secret_template" ]] || fail "missing dummy Secret template for provider '$provider'"
+  [[ "$(test_yq_read ".metadata.labels.\"provider.shoot.gardener.cloud/${provider}\"" "$secret_template")" == "true" ]] \
+    || fail "dummy $provider Secret is missing its provider label"
+  [[ "$(test_yq_read '.metadata.labels."reference.gardener.cloud/credentialsbinding"' "$secret_template")" == "true" ]] \
+    || fail "dummy $provider Secret is missing its CredentialsBinding reference label"
+done
+
 mkdir -p "$STATE_DIR" "$STUB_BIN"
 mkdir -p "${RUNTIME_DIR}/bin"
 : >"$WORKSPACE_PLUGIN_LOG"
