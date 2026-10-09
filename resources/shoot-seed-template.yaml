@@ -39,5 +39,5 @@ spec:
           - "ZONEPLACEHOLDER"
   purpose: infrastructure
   region: REGIONPLACEHOLDER
-  secretBindingName: PROVIDERPLACEHOLDER-secret
+  credentialsBindingName: PROVIDERPLACEHOLDER-secret
   seedName: SEEDPLACEHOLDER
