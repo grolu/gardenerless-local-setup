@@ -48,5 +48,5 @@ spec:
           - europe-central-1c
   purpose: evaluation
   region: europe-central-1
-  secretBindingName: aws-secret
+  credentialsBindingName: aws-secret
   seedName: aws-seed

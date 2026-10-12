@@ -45,4 +45,4 @@ spec:
         controlPlane: {}
   purpose: infrastructure
   region: europe-central-1
-  secretBindingName: aws-secret
+  credentialsBindingName: aws-secret
